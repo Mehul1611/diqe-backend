@@ -24,12 +24,22 @@ async def setup():
     try:
         task_executor = TaskExecutor(input_data)
         await task_executor.setup()
-        print("Graph RAG Setup Completed.")
+        print("GraphRAG Setup Completed.")
 
     except Exception as e:
         print(f"Pipeline Failed: {e}")
         raise
     
+async def model_inference():
+    try:
+        task_executor = TaskExecutor(input_data)
+        query = "What is the policy on remote work eligibility?"
+        print(f"\nTesting Query: {query}")
+        await task_executor.query(query)
+
+    except Exception as e:
+        print(f"Pipeline Failed: {e}")
+        raise
 
 if __name__ == "__main__":
-    asyncio.run(setup())
+    asyncio.run(model_inference())

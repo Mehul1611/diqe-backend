@@ -40,6 +40,7 @@ class GraphRAGConstant:
 
 
 class LLMConstants:
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     MODEL_PROVIDER = "openai"
     GRAPHRAG_CHAT_MODEL = "gpt-4.1-mini"
     EMBEDDINGS_MODEL = "text-embedding-3-small"

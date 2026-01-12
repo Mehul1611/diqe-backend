@@ -1,6 +1,7 @@
 from llmcore.data_processor.download_files import DownloadFiles
 from llmcore.data_processor.data_loader import DataLoader
 from llmcore.graphrag.graphrag_manager import GraphRAGManager
+from llmcore.graphrag.graphrag_search import GraphRAGSearch
 
 class TaskExecutor:
     def __init__(self, input_data: list):
@@ -19,3 +20,10 @@ class TaskExecutor:
         await graphrag_manager.setup_graphrag()
         
         print("Setup finished successfully.")
+
+    async def query(self, query: str):
+        model_id = self.input_data["model_id"]
+        print(f"Invoking GraphRAG search for: '{query}'")
+        graphrag_search = GraphRAGSearch(model_id=model_id)
+        response = await graphrag_search.local_search(query)
+        return response
