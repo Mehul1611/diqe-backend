@@ -2,7 +2,7 @@ import asyncio
 from llmcore.main import TaskExecutor
 
 input_data = {
-    "model_id": "dbe3efdd-f567-4c28-a022-545236edc585"
+    "model_id": "dbe3efdd-f567-4c28-a022-545236edc585",
     "files_data":[
     {
         "doc_id": "doc-001-test",

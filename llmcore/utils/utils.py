@@ -1,4 +1,5 @@
 import shutil
+from typing import List
 
 def clean_specific_folders(base_path: str, folders: List[str]) -> None:
     if not base_path.exists():

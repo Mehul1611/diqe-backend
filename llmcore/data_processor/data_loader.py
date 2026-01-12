@@ -3,11 +3,12 @@ import asyncio
 from pypdf import PdfReader
 from docx import Document
 from pptx import Presentation
-from llmcore.constants import ModelConstant
+from llmcore.constants import GraphRAGConstant
 
 class DataLoader:
-    def __init__(self, model_id: str):
-        self.model_id = model_id
+    def __init__(self, input_data: list):
+        self.input_data = input_data
+        self.model_id = input_data["model_id"]
 
     def _read_csv(self, path: str) -> str:
         return format_csv_to_string(path)
@@ -62,7 +63,7 @@ class DataLoader:
                 print(f"Unsupported file type: {file_path}")
                 return True
 
-            output_dir = ModelConstant.PathConstant.INPUT_FOLDER.format(model_id=self.model_id)
+            output_dir = GraphRAGConstant.PathConstant.GRAPHRAG_INPUT_FOLDER.format(model_id=self.model_id)
             os.makedirs(output_dir, exist_ok=True)
             output_path = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}.txt")
 
@@ -90,6 +91,6 @@ class DataLoader:
 
     async def extract_data(self):
         print("Starting async text extraction...")
-        tasks = [self._process_file(item) for item in self.input_data]
+        tasks = [self._process_file(item) for item in self.input_data["files_data"]]
         results = await asyncio.gather(*tasks)
         print(f"Extraction completed. Processed: {sum(results)} files.")
