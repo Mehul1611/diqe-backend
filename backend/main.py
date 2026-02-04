@@ -56,9 +56,19 @@ async def process_documents(request: ProcessRequest, background_tasks: Backgroun
         
         executor = TaskExecutor(input_data)
         # Run processing in background to unblock UI
-        background_tasks.add_task(executor.setup)
+        # MOCK MODE: Prevent OpenAI billing by commenting out actual execution
+        # background_tasks.add_task(executor.setup)
         
-        return {"status": "success", "message": "Pipeline processing started in background."}
+        # Simulate processing time
+        async def mock_processing():
+            import asyncio
+            print("MOCK: Starting processing simulation...")
+            await asyncio.sleep(5)
+            print("MOCK: Processing simulation completed.")
+            
+        background_tasks.add_task(mock_processing)
+        
+        return {"status": "success", "message": "Pipeline processing started in background (MOCK MODE)."}
     except Exception as e:
         print(f"Error initiating pipeline: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -75,8 +85,10 @@ async def query_documents(request: QueryRequest):
         
         print(f"Received query request: '{query}' ({search_type})")
         
-        executor = TaskExecutor(input_data)
-        response = await executor.query(query)
+        # executor = TaskExecutor(input_data)
+        # response = await executor.query(query)
+        
+        response = f"MOCK RESPONSE: OpenAI API is disabled. You asked: '{query}'."
         
         return {"status": "success", "answer": response}
     except Exception as e:

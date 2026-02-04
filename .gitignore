@@ -15,3 +15,8 @@ frontend/out/
 frontend/build/
 frontend/dist/
 frontend/.DS_Store
+
+# Temporary files
+*.tmp
+*.log
+*.md
