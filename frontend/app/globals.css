@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius: 0.5rem;
+}
+
+:root {
+  --background: oklch(0.05 0.01 222);
+  /* Slate 950-ish */
+  --foreground: oklch(0.98 0 210);
+
+  --card: oklch(0.06 0.01 222);
+  --card-foreground: oklch(0.98 0 210);
+
+  --popover: oklch(0.05 0.01 222);
+  --popover-foreground: oklch(0.98 0 210);
+
+  --primary: oklch(0.5 0.15 153);
+  /* Emerald 600 */
+  --primary-foreground: oklch(1 0 0);
+
+  --secondary: oklch(0.2 0.03 217);
+  --secondary-foreground: oklch(0.98 0 210);
+
+  --muted: oklch(0.2 0.03 217);
+  --muted-foreground: oklch(0.7 0.03 215);
+
+  --accent: oklch(0.2 0.03 217);
+  --accent-foreground: oklch(0.98 0 210);
+
+  --destructive: oklch(0.4 0.15 20);
+  --destructive-foreground: oklch(0.98 0 210);
+
+  --border: oklch(0.2 0.03 217);
+  --input: oklch(0.2 0.03 217);
+  --ring: oklch(0.5 0.15 153);
+}
+
+/* Base styles */
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
+* {
+  border-color: var(--color-border);
+}
