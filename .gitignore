@@ -1,14 +1,17 @@
-# Python
-__pycache__/
-*.pyc
-.env
-.venv/
-
-# OS files
-.DS_Store
-Thumbs.db
-
 venv/
 plans/
 models/
 output/
+__pycache__/
+*.pyc
+.env
+.venv/
+.DS_Store
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/dist/
+frontend/.DS_Store

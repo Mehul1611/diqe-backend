@@ -27,3 +27,13 @@ class TaskExecutor:
         graphrag_search = GraphRAGSearch(model_id=model_id)
         response = await graphrag_search.local_search(query)
         return response
+
+    def get_sources(self):
+        model_id = self.input_data["model_id"]
+        graphrag_search = GraphRAGSearch(model_id=model_id)
+        return graphrag_search.get_text_units()
+
+    def get_graph(self):
+        model_id = self.input_data["model_id"]
+        graphrag_search = GraphRAGSearch(model_id=model_id)
+        return graphrag_search.get_graph_data()

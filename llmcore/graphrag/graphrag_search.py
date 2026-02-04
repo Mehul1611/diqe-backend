@@ -135,3 +135,31 @@ class GraphRAGSearch:
         result = await search_engine.search(query)
         print(f"Response for query: {result.response}")
         return result.response
+
+    def get_text_units(self) -> List[dict]:
+        base_dir = GraphRAGConstant.PathConstant.GRAPHRAG_OUTPUT_FOLDER.format(model_id=self.model_id)
+        text_unit_df = self._read_parquet_files(file_path=os.path.join(base_dir, f"{GraphRAGConstant.TEXT_UNIT_TABLE}.parquet"))
+        
+        if text_unit_df is None or text_unit_df.empty:
+            return []
+            
+        return text_unit_df.reset_index().to_dict(orient="records")
+
+    def get_graph_data(self) -> dict:
+        base_dir = GraphRAGConstant.PathConstant.GRAPHRAG_OUTPUT_FOLDER.format(model_id=self.model_id)
+        
+        entity_df = self._read_parquet_files(file_path=os.path.join(base_dir, f"{GraphRAGConstant.ENTITY_TABLE}.parquet"))
+        relationship_df = self._read_parquet_files(file_path=os.path.join(base_dir, f"{GraphRAGConstant.RELATIONSHIP_TABLE}.parquet"))
+        
+        entities = []
+        if entity_df is not None and not entity_df.empty:
+            entities = entity_df.reset_index().to_dict(orient="records")
+            
+        relationships = []
+        if relationship_df is not None and not relationship_df.empty:
+            relationships = relationship_df.reset_index().to_dict(orient="records")
+            
+        return {
+            "entities": entities,
+            "relationships": relationships
+        }
