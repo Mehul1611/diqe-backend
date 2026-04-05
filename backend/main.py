@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Any
 from dotenv import load_dotenv
@@ -37,6 +38,8 @@ class QueryRequest(BaseModel):
     model_id: str
     query: str
     type: str = "local" # 'local' or 'global'
+    language: str = "English"
+    mode: str = "fast" # 'fast' or 'thinking'
 
 class ModelIdRequest(BaseModel):
     model_id: str
@@ -55,20 +58,9 @@ async def process_documents(request: ProcessRequest, background_tasks: Backgroun
         print(f"Received process request for model: {input_data['model_id']}")
         
         executor = TaskExecutor(input_data)
-        # Run processing in background to unblock UI
-        # MOCK MODE: Prevent OpenAI billing by commenting out actual execution
-        # background_tasks.add_task(executor.setup)
+        background_tasks.add_task(executor.setup)
         
-        # Simulate processing time
-        async def mock_processing():
-            import asyncio
-            print("MOCK: Starting processing simulation...")
-            await asyncio.sleep(5)
-            print("MOCK: Processing simulation completed.")
-            
-        background_tasks.add_task(mock_processing)
-        
-        return {"status": "success", "message": "Pipeline processing started in background (MOCK MODE)."}
+        return {"status": "success", "message": "Pipeline processing started in background."}
     except Exception as e:
         print(f"Error initiating pipeline: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -83,14 +75,19 @@ async def query_documents(request: QueryRequest):
         query = request.query
         search_type = request.type
         
-        print(f"Received query request: '{query}' ({search_type})")
+        print(f"Received query request: '{query}' ({search_type}) - Lang: {request.language}, Mode: {request.mode}")
         
-        # executor = TaskExecutor(input_data)
-        # response = await executor.query(query)
-        
-        response = f"MOCK RESPONSE: OpenAI API is disabled. You asked: '{query}'."
-        
-        return {"status": "success", "answer": response}
+        executor = TaskExecutor(input_data)
+
+        return StreamingResponse(
+            executor.stream_query(
+                query, 
+                type=search_type, 
+                language=request.language, 
+                mode=request.mode
+            ), 
+            media_type="text/plain"
+        )
     except Exception as e:
         print(f"Error executing query: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -123,13 +120,64 @@ def get_model_graph(model_id: str):
         print(f"Error serving graph: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/status/{model_id}")
+async def get_processing_status(model_id: str):
+    try:
+        output_dir = f"output/{model_id}/graphrag/output"
+        entities_path = os.path.join(output_dir, "entities.parquet")
+        
+        if os.path.exists(entities_path):
+            return {"status": "completed", "progress": 100, "message": "Indexing complete."}
+        
+        lance_dir = os.path.join(f"output/{model_id}/graphrag/output", "lancedb")
+        if os.path.exists(lance_dir):
+            return {"status": "indexing", "progress": 90, "message": "Starting LanceDB vector store..."}
+
+        log_path = f"output/{model_id}/graphrag/logs/indexing-engine.log"
+        if os.path.exists(log_path):
+            with open(log_path, "r") as f:
+                logs = f.readlines()
+                last_logs = logs[-10:] if len(logs) > 10 else logs
+                
+                progress = 75
+                message = "Indexing knowledge graph..."
+                
+                for log in reversed(last_logs):
+                    if "create_final_communities" in log:
+                        progress = 85
+                        message = "Generating community reports..."
+                        break
+                    elif "create_base_entities" in log:
+                        progress = 80
+                        message = "Extracting entities and relationships..."
+                        break
+                    elif "create_base_text_units" in log:
+                        progress = 70
+                        message = "Partitioning text units..."
+                        break
+                
+                return {"status": "indexing", "progress": progress, "message": message}
+
+        input_dir = f"output/{model_id}/graphrag/input"
+        if os.path.exists(input_dir) and os.listdir(input_dir):
+            return {"status": "indexing", "progress": 60, "message": "GraphRAG pipeline started..."}
+            
+        extraction_dir = f"models/{model_id}/input"
+        if os.path.exists(extraction_dir) and os.listdir(extraction_dir):
+             return {"status": "construction", "progress": 50, "message": "Knowledge graph construction..."}
+            
+        return {"status": "pending", "progress": 0, "message": "Checking pipeline status..."}
+    except Exception as e:
+        print(f"Error checking status: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 @app.post("/upload/{model_id}")
 async def upload_files(model_id: str, files: List[UploadFile] = File(...)):
     """
     Uploads source documents to the model's input directory.
     """
     try:
-        # Define input directory
         input_dir = f"models/{model_id}/input"
         os.makedirs(input_dir, exist_ok=True)
         
@@ -139,7 +187,6 @@ async def upload_files(model_id: str, files: List[UploadFile] = File(...)):
             with open(file_location, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
             
-            # create absolute path for return
             abs_path = os.path.abspath(file_location)
             saved_files.append({
                 "filename": file.filename,

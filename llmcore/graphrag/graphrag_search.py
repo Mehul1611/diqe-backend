@@ -1,4 +1,5 @@
 from llmcore.constants import GraphRAGConstant, LLMConstants
+from llmcore.graphrag.prompts import GRAPH_RAG_USER_PROMPT
 from graphrag.config.models.vector_store_schema_config import VectorStoreSchemaConfig
 from graphrag.query.context_builder.entity_extraction import EntityVectorStoreKey
 from graphrag.query.indexer_adapters import (
@@ -17,6 +18,7 @@ from graphrag.tokenizer.get_tokenizer import get_tokenizer
 from graphrag.tokenizer.tokenizer import Tokenizer
 from typing import Tuple, Any, List
 import pandas as pd
+import numpy as np
 import os
 
 class GraphRAGSearch:
@@ -112,12 +114,14 @@ class GraphRAGSearch:
             tokenizer=tokenizer,
         )
     
-    def _init_search_engine(self) -> LocalSearch:
+    def _init_search_engine(self, language: str = "English") -> LocalSearch:
         local_context_params = GraphRAGConstant.LOCAL_PARAMETERS
         model_params = LLMConstants.MODEL_PARAMETERS
 
         chat_model, tokenizer = self._get_chat_model()
         context_builder = self._build_context(tokenizer)
+
+        system_prompt = GRAPH_RAG_USER_PROMPT.format(language=language)
 
         return LocalSearch(
             model=chat_model,
@@ -125,16 +129,35 @@ class GraphRAGSearch:
             tokenizer=tokenizer,
             model_params=model_params,
             context_builder_params=local_context_params,
+            system_prompt=system_prompt,
             response_type=LLMConstants.LOCAL_SEARCH_RESPONSE_TYPE,
         )
     
-    async def local_search(self, query: str) -> str:
-        search_engine = self._init_search_engine()
+    async def local_search(self, query: str, language: str = "English") -> str:
+        search_engine = self._init_search_engine(language=language)
 
-        print("Running Query Search")
+        print(f"Running Knowledge Graph Tool Search (Lang: {language})")
         result = await search_engine.search(query)
-        print(f"Response for query: {result.response}")
+        print(f"Tool Response: {result.response}")
         return result.response
+
+    def _sanitize_data(self, data: List[dict]) -> List[dict]:
+        sanitized_data = []
+        for record in data:
+            sanitized_record = {}
+            for key, value in record.items():
+                if isinstance(value, np.ndarray):
+                    sanitized_record[key] = value.tolist()
+                elif isinstance(value, (np.int64, np.int32)):
+                    sanitized_record[key] = int(value)
+                elif isinstance(value, (np.float64, np.float32)):
+                    sanitized_record[key] = float(value)
+                elif pd.isna(value):
+                    sanitized_record[key] = None
+                else:
+                    sanitized_record[key] = value
+            sanitized_data.append(sanitized_record)
+        return sanitized_data
 
     def get_text_units(self) -> List[dict]:
         base_dir = GraphRAGConstant.PathConstant.GRAPHRAG_OUTPUT_FOLDER.format(model_id=self.model_id)
@@ -143,7 +166,8 @@ class GraphRAGSearch:
         if text_unit_df is None or text_unit_df.empty:
             return []
             
-        return text_unit_df.reset_index().to_dict(orient="records")
+        data = text_unit_df.reset_index().to_dict(orient="records")
+        return self._sanitize_data(data)
 
     def get_graph_data(self) -> dict:
         base_dir = GraphRAGConstant.PathConstant.GRAPHRAG_OUTPUT_FOLDER.format(model_id=self.model_id)
@@ -153,11 +177,11 @@ class GraphRAGSearch:
         
         entities = []
         if entity_df is not None and not entity_df.empty:
-            entities = entity_df.reset_index().to_dict(orient="records")
+            entities = self._sanitize_data(entity_df.reset_index().to_dict(orient="records"))
             
         relationships = []
         if relationship_df is not None and not relationship_df.empty:
-            relationships = relationship_df.reset_index().to_dict(orient="records")
+            relationships = self._sanitize_data(relationship_df.reset_index().to_dict(orient="records"))
             
         return {
             "entities": entities,

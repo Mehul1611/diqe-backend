@@ -23,11 +23,21 @@ class GraphRAGManager:
 
     async def _run_graphrag_index(self, config):
         try:
+            print("🚀 Starting GraphRAG indexing engine (this may take several minutes)...")
             result = await api.build_index(config=config)
+            
+            has_errors = False
             for workflow in result:
-                print(f"{workflow.workflow}: Errors: {workflow.errors}")
-        except Exception:
-            print("GraphRAG indexing failed")
+                if workflow.errors:
+                    has_errors = True
+                    print(f"⚠️ Workflow '{workflow.workflow}' encountered issues: {workflow.errors}")
+                else:
+                    print(f"✅ Workflow '{workflow.workflow}' completed successfully.")
+            
+            if has_errors:
+                print("💡 Note: Some indexing workflows reported errors. This is common with small datasets or hardware limitations. The knowledge graph might still be usable.")
+        except Exception as e:
+            print(f"❌ GraphRAG indexing failed FATALLY: {e}")
             raise
     
     async def setup_graphrag(self) -> str:
