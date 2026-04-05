@@ -21,7 +21,6 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
     const [currentStep, setCurrentStep] = useState(1)
     const [isComplete, setIsComplete] = useState(false)
 
-    // Simulate Processing Pipeline
     useEffect(() => {
         const interval = setInterval(() => {
             setCurrentStep(prev => {
@@ -29,7 +28,7 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
                 setIsComplete(true)
                 return prev
             })
-        }, 2000) // 2s per step
+        }, 2000) 
 
         return () => clearInterval(interval)
     }, [])

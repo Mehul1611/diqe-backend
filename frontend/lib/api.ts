@@ -2,7 +2,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export interface FileData {
     doc_id: string
-    file_path: string // For now, we just pass string, in real app this would be s3_key
+    file_path: string
     domain: string
     title: string
 }

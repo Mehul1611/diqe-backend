@@ -18,7 +18,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
     const [isSearching, setIsSearching] = useState(false)
     const [view, setView] = useState<'console' | 'sources' | 'graph'>('console')
 
-    // Data states
     const [sources, setSources] = useState<any[]>([])
     const [graphData, setGraphData] = useState<any>(null)
     const [loadingData, setLoadingData] = useState(false)
@@ -26,7 +25,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
     const handleSearch = async () => {
         if (!query.trim()) return
 
-        // Add User Message
         const tempQuery = query
         setMessages(prev => [...prev, { role: 'user', content: tempQuery }])
         setQuery('')
@@ -79,11 +77,15 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
 
     return (
         <main className="flex h-screen bg-slate-950 text-slate-200">
-            {/* Sidebar */}
             <aside className="w-64 border-r border-slate-800 bg-slate-900/50 p-4 backdrop-blur-xl">
-                <div className="flex items-center space-x-2 text-emerald-500 mb-8 px-2">
-                    <Database className="h-6 w-6" />
-                    <span className="font-bold text-lg">DIQE Core</span>
+                <div className="flex items-center space-x-2 mb-8 px-2">
+                    <Database className="h-6 w-6 text-emerald-500" />
+                    <span className="font-bold text-lg tracking-tight">
+                        <span className="text-white">D</span>
+                        <span className="text-emerald-500">I</span>
+                        <span className="text-white">QE</span>
+                        <span className="text-slate-300 font-medium ml-2">Core</span>
+                    </span>
                 </div>
 
                 <nav className="space-y-2">
@@ -116,7 +118,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                 </div>
             </aside>
 
-            {/* Main Content */}
             <section className="flex flex-1 flex-col h-full overflow-hidden">
                 <header className="flex h-16 items-center border-b border-slate-800 bg-slate-900/20 px-6 backdrop-blur-sm shrink-0">
                     <h1 className="text-lg font-medium text-white">
@@ -128,7 +129,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                 </header>
 
                 <div className="flex-1 overflow-hidden relative">
-                    {/* Console View */}
                     {view === 'console' && (
                         <div className="h-full flex flex-col">
                             <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-800">
@@ -186,14 +186,12 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                         </div>
                     )}
 
-                    {/* Sources View */}
                     {view === 'sources' && (
                         <div className="h-full overflow-hidden">
                             <SourcesView sources={sources} />
                         </div>
                     )}
 
-                    {/* Graph View */}
                     {view === 'graph' && (
                         <div className="h-full overflow-hidden">
                             <GraphView data={graphData} />
