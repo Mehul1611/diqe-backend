@@ -21,18 +21,36 @@ export const api = {
         return res.json()
     },
 
-    queryDocument: async (modelId: string, query: string, type: 'local' | 'global' = 'local') => {
+    queryDocument: async (modelId: string, query: string, type: 'local' | 'global' = 'local', language: string = 'English', mode: string = 'fast') => {
         const res = await fetch(`${API_BASE}/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 model_id: modelId,
                 query: query,
-                type: type
+                type: type,
+                language: language,
+                mode: mode
             })
         })
         if (!res.ok) throw new Error('Query failed')
         return res.json()
+    },
+
+    streamQueryDocument: async (modelId: string, query: string, type: 'local' | 'global' = 'local', language: string = 'English', mode: string = 'fast') => {
+        const res = await fetch(`${API_BASE}/query`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model_id: modelId,
+                query: query,
+                type: type,
+                language: language,
+                mode: mode
+            })
+        })
+        if (!res.ok) throw new Error('Query failed')
+        return res
     },
 
     getSources: async (modelId: string) => {
@@ -59,6 +77,12 @@ export const api = {
         })
 
         if (!res.ok) throw new Error('Upload failed')
+        return res.json()
+    },
+
+    getStatus: async (modelId: string) => {
+        const res = await fetch(`${API_BASE}/api/status/${modelId}`)
+        if (!res.ok) throw new Error('Failed to fetch status')
         return res.json()
     }
 }

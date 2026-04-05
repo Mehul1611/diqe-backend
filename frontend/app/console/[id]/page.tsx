@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, use } from 'react'
-import { Send, FileText, Search, Zap, LayoutDashboard, Database } from 'lucide-react'
+import { Send, FileText, Search, Zap, LayoutDashboard, Database, Plus, Globe, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -22,6 +22,12 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
     const [graphData, setGraphData] = useState<any>(null)
     const [loadingData, setLoadingData] = useState(false)
 
+    // New states for language, mode, and search type
+    const [language, setLanguage] = useState('English')
+    const [mode, setMode] = useState<'fast' | 'thinking'>('fast')
+    const [searchType, setSearchType] = useState<'local' | 'global'>('local')
+    const [showSearchMenu, setShowSearchMenu] = useState(false)
+
     const handleSearch = async () => {
         if (!query.trim()) return
 
@@ -31,12 +37,31 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
         setIsSearching(true)
 
         try {
-            const res = await api.queryDocument(id, tempQuery, 'local')
+            const res = await api.streamQueryDocument(id, tempQuery, searchType, language, mode)
+            const reader = res.body?.getReader()
+            const decoder = new TextDecoder("utf-8")
 
-            setMessages(prev => [...prev, { role: 'assistant', content: res.answer }])
+            // Add an empty assistant message to stream into
+            setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+            setIsSearching(false) // Hide spinner once streaming starts
+
+            if (reader) {
+                let accumulatedText = ""
+                while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+                    const chunk = decoder.decode(value, { stream: true })
+                    accumulatedText += chunk
+
+                    setMessages(prev => {
+                        const newMessages = [...prev]
+                        newMessages[newMessages.length - 1].content = accumulatedText
+                        return newMessages
+                    })
+                }
+            }
         } catch (e) {
             setMessages(prev => [...prev, { role: 'assistant', content: "Error executing query." }])
-        } finally {
             setIsSearching(false)
         }
     }
@@ -158,29 +183,121 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                                 )}
                             </div>
 
-                            <div className="border-t border-slate-800 bg-slate-900/50 p-6 backdrop-blur-md shrink-0">
-                                <div className="mx-auto flex max-w-3xl items-center space-x-4">
-                                    <div className="relative flex-1">
-                                        <input
-                                            type="text"
-                                            value={query}
-                                            onChange={(e) => setQuery(e.target.value)}
-                                            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                            placeholder="Ask complex questions about your documents..."
-                                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 pr-12 text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                        />
-                                        <div className="absolute right-3 top-3 rounded-md border border-slate-700 bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-                                            Global Search
+                            <div className="border-t border-slate-800 bg-slate-900/50 pt-6 px-6 pb-10 backdrop-blur-md shrink-0">
+                                <div className="mx-auto max-w-3xl">
+                                    <div className="flex items-center justify-between mb-4 px-1">
+                                        <div className="flex items-center bg-slate-800/40 rounded-lg p-1 border border-slate-800/50 backdrop-blur-sm">
+                                            <button
+                                                onClick={() => setMode('fast')}
+                                                className={cn(
+                                                    "px-4 py-1.5 text-xs font-medium rounded-md transition-all duration-200",
+                                                    mode === 'fast' ? "bg-emerald-600 text-white shadow-lg shadow-emerald-900/20" : "text-slate-400 hover:text-slate-200"
+                                                )}
+                                            >
+                                                Fast Mode
+                                            </button>
+                                            <button
+                                                onClick={() => setMode('thinking')}
+                                                className={cn(
+                                                    "px-4 py-1.5 text-xs font-medium rounded-md transition-all duration-200",
+                                                    mode === 'thinking' ? "bg-yellow-600 text-white shadow-lg shadow-yellow-900/20" : "text-slate-400 hover:text-slate-200"
+                                                )}
+                                            >
+                                                Thinking Mode
+                                            </button>
+                                        </div>
+
+                                        <div className="flex items-center space-x-2">
+                                            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mr-1">Language</span>
+                                            <select
+                                                value={language}
+                                                onChange={(e) => setLanguage(e.target.value)}
+                                                className={cn(
+                                                    "bg-slate-900/80 border border-slate-700/50 text-xs rounded-lg p-2 pr-8 transition-all hover:border-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cpath%20d%3D%22M5%207L10%2012L15%207%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E')] bg-[length:1.25rem_1.25rem] bg-[position:right_0.5rem_center] bg-no-repeat",
+                                                    language === 'English' ? 'text-indigo-400' :
+                                                    language === 'Spanish' ? 'text-amber-400' :
+                                                    language === 'French' ? 'text-pink-400' :
+                                                    language === 'German' ? 'text-yellow-400' :
+                                                    language === 'Dutch' ? 'text-orange-400' :
+                                                    language === 'Chinese' ? 'text-red-400' :
+                                                    language === 'Japanese' ? 'text-rose-400' : 'text-slate-300'
+                                                )}
+                                            >
+                                                <option value="English">English</option>
+                                                <option value="Spanish">Spanish</option>
+                                                <option value="French">French</option>
+                                                <option value="German">German</option>
+                                                <option value="Dutch">Dutch</option>
+                                                <option value="Chinese">Chinese</option>
+                                                <option value="Japanese">Japanese</option>
+                                            </select>
                                         </div>
                                     </div>
-                                    <Button
-                                        onClick={handleSearch}
-                                        disabled={!query.trim() || isSearching}
-                                        size="icon"
-                                        className="h-12 w-12 rounded-xl bg-emerald-600 hover:bg-emerald-500"
-                                    >
-                                        <Send className="h-5 w-5" />
-                                    </Button>
+
+                                    <div className="flex items-center space-x-4">
+                                        <div className={cn(
+                                            "relative flex-1 flex items-center w-full rounded-xl border px-3 py-2 shadow-inner transition-all",
+                                            searchType === 'local'
+                                                ? "border-emerald-900/50 bg-emerald-950/10 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500"
+                                                : "border-blue-900/50 bg-blue-950/10 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500"
+                                        )}>
+                                            <div className="relative flex items-center space-x-2 mr-2 shrink-0">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowSearchMenu(!showSearchMenu)}
+                                                    className="flex items-center justify-center rounded-full bg-slate-800 p-1.5 hover:bg-slate-700 transition border border-slate-600"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5 text-slate-300" />
+                                                </button>
+                                                {searchType === 'global' && (
+                                                    <span className="text-[10px] uppercase font-bold text-blue-400 bg-blue-900/30 px-2 py-0.5 rounded-md border border-blue-700/50 whitespace-nowrap">
+                                                        Web Search
+                                                    </span>
+                                                )}
+                                                {searchType === 'local' && (
+                                                    <span className="text-[10px] uppercase font-bold text-emerald-500 bg-emerald-900/30 px-2 py-0.5 rounded-md border border-emerald-700/50 whitespace-nowrap">
+                                                        Document Search
+                                                    </span>
+                                                )}
+                                                
+                                                {showSearchMenu && (
+                                                    <div className="absolute left-0 bottom-full mb-4 w-36 rounded-lg border border-slate-700 bg-slate-800 shadow-xl z-50 overflow-hidden flex flex-col">
+                                                        {searchType === 'local' ? (
+                                                            <button
+                                                                onClick={() => { setSearchType('global'); setShowSearchMenu(false); }}
+                                                                className="w-full text-left px-3 py-2 text-xs transition-colors text-blue-400 hover:bg-blue-900/40 font-bold"
+                                                            >
+                                                                Web Search
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => { setSearchType('local'); setShowSearchMenu(false); }}
+                                                                className="w-full text-left px-3 py-2 text-xs transition-colors text-emerald-400 hover:bg-emerald-900/40 font-bold"
+                                                            >
+                                                                Document Search
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={query}
+                                                onChange={(e) => setQuery(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                                placeholder="Ask questions about your documents..."
+                                                className="flex-1 bg-transparent text-white placeholder-slate-500 focus:outline-none py-1 min-w-0"
+                                            />
+                                        </div>
+                                        <Button
+                                            onClick={handleSearch}
+                                            disabled={!query.trim() || isSearching}
+                                            size="icon"
+                                            className="h-12 w-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/20 transition-all active:scale-95"
+                                        >
+                                            <Send className="h-5 w-5" />
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
