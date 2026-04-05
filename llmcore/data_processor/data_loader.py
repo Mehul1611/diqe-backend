@@ -1,4 +1,5 @@
 import os
+import csv
 import asyncio
 from pypdf import PdfReader
 from docx import Document
@@ -11,7 +12,12 @@ class DataLoader:
         self.model_id = input_data["model_id"]
 
     def _read_csv(self, path: str) -> str:
-        return format_csv_to_string(path)
+        content = []
+        with open(path, mode='r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                content.append(", ".join(row))
+        return "\n".join(content)
 
     def _read_txt(self, path: str) -> str:
         with open(path, encoding="utf-8") as f:
