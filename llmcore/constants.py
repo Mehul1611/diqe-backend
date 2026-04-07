@@ -43,6 +43,7 @@ class LLMConstants:
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     MODEL_PROVIDER = "openai"
     GRAPHRAG_CHAT_MODEL = "gpt-4.1-mini"
+    AGENT_CHAT_MODEL = "gpt-5-mini"
     EMBEDDINGS_MODEL = "text-embedding-3-small"
     CHAT_MODEL_NAME = "local_search"
     LOCAL_SEARCH_RESPONSE_TYPE = "multiple paragraphs"
