@@ -1,3 +1,8 @@
+# ⚠️ Usage Restriction
+
+This repository is made publicly available **for viewing and evaluation purposes only** (e.g., interviews and portfolio review).  
+**Unauthorized use, copying, modification, or distribution is prohibited** without explicit written permission from the author.
+
 # DIQE Engine (Document Intelligence Query Engine)
 
 ![DIQE Engine](https://img.shields.io/badge/Status-Active-brightgreen) ![Python](https://img.shields.io/badge/Backend-FastAPI-blue) ![Next.js](https://img.shields.io/badge/Frontend-Next.js-black) ![LangGraph](https://img.shields.io/badge/AI-LangGraph%20%7C%20GraphRAG-orange)
@@ -54,6 +59,37 @@ The DIQE application is organized into three distinct layers:
 
 ---
 
-## License & Contribution
+## How to run locally
 
-This project is licensed under the MIT License. Feel free to open issues and pull requests to enhance the extraction algorithms or add new user-facing visualizations.
+### Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- An OpenAI API key in your environment as `OPENAI_API_KEY`
+
+### Backend
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python backend/main.py
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+## License
+
+All rights reserved. See `LICENSE`.
+
+## Contributing
+
+This repository is published for viewing/evaluation. Please contact the author if you'd like to discuss collaboration.

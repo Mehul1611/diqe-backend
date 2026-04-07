@@ -1,3 +1,6 @@
+# Author: Mehul Sharma
+# This code is for evaluation purposes only. Unauthorized use is prohibited.
+
 from llmcore.data_processor.download_files import DownloadFiles
 from llmcore.data_processor.data_loader import DataLoader
 from llmcore.graphrag.graphrag_manager import GraphRAGManager
