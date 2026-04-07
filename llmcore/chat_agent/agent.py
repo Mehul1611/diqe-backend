@@ -1,5 +1,5 @@
 from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate
 from llmcore.constants import LLMConstants
 from llmcore.chat_agent.prompt import AGENT_SYSTEM_PROMPT
@@ -10,7 +10,7 @@ class ChatAgentExecutor:
         self.model_id = model_id
         self.language = language
         self.mode = mode
-        self.tools = get_tools(model_id, language)
+        self.tools = get_tools(model_id)
         self.llm = self._init_llm(mode)
         self.agent_executor = self._init_agent()
 
@@ -19,25 +19,30 @@ class ChatAgentExecutor:
         return ChatOpenAI(
             model=LLMConstants.AGENT_CHAT_MODEL,
             api_key=LLMConstants.OPENAI_API_KEY,
-            reasoning_effort=reasoning_val
+            reasoning_effort=reasoning_val,
         )
 
-    def _init_agent(self) -> AgentExecutor:
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", AGENT_SYSTEM_PROMPT.format(language=self.language)),
-            ("human", "query mode is: '{mode}'. Question: {input}"),
-            ("placeholder", "{agent_scratchpad}")
-        ])
-        
-        agent = create_tool_calling_agent(self.llm, self.tools, prompt)
-        return AgentExecutor(agent=agent, tools=self.tools)
+    def _init_agent(self):
+        system_prompt = AGENT_SYSTEM_PROMPT.format(language=self.language)
+        agent = create_agent(self.llm, self.tools, system_prompt=system_prompt)
+        return agent
 
     async def stream_execute(self, query: str, search_type: str):
+        input_msg = f"query mode is: '{search_type}'. Question: {query}"
         async for event in self.agent_executor.astream_events(
-            {"input": query, "mode": search_type}, 
+            {"messages": [("user", input_msg)]}, 
             version="v2"
         ):
+            if event["event"] == "on_tool_start":
+                print(f"Agent using tool: {event['name']} with input: {event['data'].get('input')}")
+            
             if event["event"] == "on_chat_model_stream":
                 chunk = event["data"]["chunk"].content
                 if chunk and isinstance(chunk, str):
                     yield chunk
+
+    async def execute(self, query: str, search_type: str) -> str:
+        response = ""
+        async for chunk in self.stream_execute(query, search_type):
+            response += chunk
+        return response

@@ -39,6 +39,7 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
                 if (data.status === 'completed') {
                     setCurrentStep(4)
                     setIsComplete(true)
+                    router.replace(`/console/${id}`)
                 } else if (data.status === 'indexing') {
                     // Map progress to steps 1-4 for visual representation
                     if (data.progress < 75) setCurrentStep(2)

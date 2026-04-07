@@ -5,6 +5,7 @@ from typing import List, Optional, Any
 from dotenv import load_dotenv
 import os
 import shutil
+from pathlib import Path
 
 load_dotenv()
 
@@ -123,18 +124,30 @@ def get_model_graph(model_id: str):
 @app.get("/api/status/{model_id}")
 async def get_processing_status(model_id: str):
     try:
-        output_dir = f"output/{model_id}/graphrag/output"
-        entities_path = os.path.join(output_dir, "entities.parquet")
         
-        if os.path.exists(entities_path):
-            return {"status": "completed", "progress": 100, "message": "Indexing complete."}
+        repo_root = Path(__file__).resolve().parents[1]
+        output_dir = repo_root / "output" / model_id / "graphrag" / "output"
+
+        def _exists_any(dir_path: Path, filenames: set[str]) -> bool:
+            if not dir_path.exists():
+                return False
+            for root, _, files in os.walk(dir_path):
+                if any(f in filenames for f in files):
+                    return True
+            return False
+
+        if _exists_any(output_dir, {"entities.parquet", "relationships.parquet", "text_units.parquet", "stats.json"}):
+            has_core = _exists_any(output_dir, {"entities.parquet", "text_units.parquet"}) or _exists_any(output_dir, {"relationships.parquet"})
+            has_stats = _exists_any(output_dir, {"stats.json"})
+            if has_core and has_stats:
+                return {"status": "completed", "progress": 100, "message": "Indexing complete."}
         
-        lance_dir = os.path.join(f"output/{model_id}/graphrag/output", "lancedb")
-        if os.path.exists(lance_dir):
+        lance_dir = output_dir / "lancedb"
+        if lance_dir.exists():
             return {"status": "indexing", "progress": 90, "message": "Starting LanceDB vector store..."}
 
-        log_path = f"output/{model_id}/graphrag/logs/indexing-engine.log"
-        if os.path.exists(log_path):
+        log_path = repo_root / "output" / model_id / "graphrag" / "logs" / "indexing-engine.log"
+        if log_path.exists():
             with open(log_path, "r") as f:
                 logs = f.readlines()
                 last_logs = logs[-10:] if len(logs) > 10 else logs
@@ -158,12 +171,12 @@ async def get_processing_status(model_id: str):
                 
                 return {"status": "indexing", "progress": progress, "message": message}
 
-        input_dir = f"output/{model_id}/graphrag/input"
-        if os.path.exists(input_dir) and os.listdir(input_dir):
+        input_dir = repo_root / "output" / model_id / "graphrag" / "input"
+        if input_dir.exists() and any(input_dir.iterdir()):
             return {"status": "indexing", "progress": 60, "message": "GraphRAG pipeline started..."}
             
-        extraction_dir = f"models/{model_id}/input"
-        if os.path.exists(extraction_dir) and os.listdir(extraction_dir):
+        extraction_dir = repo_root / "models" / model_id / "input"
+        if extraction_dir.exists() and any(extraction_dir.iterdir()):
              return {"status": "construction", "progress": 50, "message": "Knowledge graph construction..."}
             
         return {"status": "pending", "progress": 0, "message": "Checking pipeline status..."}
