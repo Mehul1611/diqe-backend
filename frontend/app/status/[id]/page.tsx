@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { CheckCircle2, Circle, Loader2, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const steps = [
@@ -19,20 +20,54 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
     const { id } = use(params)
     const router = useRouter()
     const [currentStep, setCurrentStep] = useState(1)
+    const [progress, setProgress] = useState(0)
+    const [statusMessage, setStatusMessage] = useState('Checking pipeline status...')
     const [isComplete, setIsComplete] = useState(false)
+    const [error, setError] = useState<string | null>(null)
 
-    // Simulate Processing Pipeline
     useEffect(() => {
-        const interval = setInterval(() => {
-            setCurrentStep(prev => {
-                if (prev < 4) return prev + 1
-                setIsComplete(true)
-                return prev
-            })
-        }, 2000) // 2s per step
+        let timer: NodeJS.Timeout
 
-        return () => clearInterval(interval)
-    }, [])
+        const pollStatus = async () => {
+            try {
+                const data = await api.getStatus(id)
+                console.log("Status update:", data)
+
+                if (data.progress !== undefined) setProgress(data.progress)
+                if (data.message) setStatusMessage(data.message)
+
+                if (data.status === 'completed') {
+                    setCurrentStep(4)
+                    setIsComplete(true)
+                } else if (data.status === 'indexing') {
+                    // Map progress to steps 1-4 for visual representation
+                    if (data.progress < 75) setCurrentStep(2)
+                    else if (data.progress < 95) setCurrentStep(3)
+                    else setCurrentStep(4)
+                    setIsComplete(false)
+                } else if (data.status === 'construction') {
+                    setCurrentStep(2)
+                    setIsComplete(false)
+                } else if (data.status === 'pending') {
+                    setCurrentStep(1)
+                    setIsComplete(false)
+                }
+
+                if (data.status !== 'completed' && data.status !== 'error') {
+                    timer = setTimeout(pollStatus, 3000)
+                }
+            } catch (err) {
+                console.error("Polling error:", err)
+                setError("Failed to fetch status updates. Retrying...")
+                timer = setTimeout(pollStatus, 5000)
+            }
+        }
+
+        pollStatus()
+
+        return () => clearTimeout(timer)
+    }, [id])
+
 
     return (
         <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
