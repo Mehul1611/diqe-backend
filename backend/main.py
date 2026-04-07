@@ -1,3 +1,6 @@
+# Author: Mehul Sharma
+# This code is for evaluation purposes only. Unauthorized use is prohibited.
+
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel

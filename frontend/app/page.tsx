@@ -1,3 +1,6 @@
+// Author: Mehul Sharma
+// This code is for evaluation purposes only. Unauthorized use is prohibited.
+
 'use client'
 
 import { useState } from 'react'
