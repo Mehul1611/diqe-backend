@@ -1,4 +1,4 @@
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate
 from llmcore.constants import LLMConstants
@@ -14,12 +14,12 @@ class ChatAgentExecutor:
         self.llm = self._init_llm(mode)
         self.agent_executor = self._init_agent()
 
-    def _init_llm(self, mode: str) -> ChatOpenAI:
-        reasoning_val = "high" if mode == "thinking" else "low"
-        return ChatOpenAI(
+    def _init_llm(self, mode: str) -> ChatGroq:
+        temperature = 0.7 if mode == "thinking" else 0.0
+        return ChatGroq(
             model=LLMConstants.AGENT_CHAT_MODEL,
-            api_key=LLMConstants.OPENAI_API_KEY,
-            reasoning_effort=reasoning_val,
+            api_key=LLMConstants.GROQ_API_KEY,
+            temperature=temperature,
         )
 
     def _init_agent(self):

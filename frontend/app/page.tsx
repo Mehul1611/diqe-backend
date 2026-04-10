@@ -43,10 +43,10 @@ export default function Home() {
 
     await new Promise(resolve => setTimeout(resolve, 1500))
 
-    const mockModelId = "dbe3efdd-f567-4c28-a022-545236edc585"
+    const modelId = crypto.randomUUID()
 
     try {
-      const uploadRes = await api.uploadFiles(mockModelId, files)
+      const uploadRes = await api.uploadFiles(modelId, files)
       const uploadedFiles = uploadRes.files
 
       const fileDataList = uploadedFiles.map((f: any, index: number) => ({
@@ -56,12 +56,12 @@ export default function Home() {
         title: f.filename
       }))
 
-      await api.processDocument(mockModelId, fileDataList)
+      await api.processDocument(modelId, fileDataList)
 
-      router.push(`/status/${mockModelId}`)
+      router.push(`/status/${modelId}`)
     } catch (e) {
       console.error(e)
-      router.push(`/status/${mockModelId}`)
+      router.push(`/status/${modelId}`)
     }
   }
 
