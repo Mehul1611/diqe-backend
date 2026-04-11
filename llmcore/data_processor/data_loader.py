@@ -5,7 +5,6 @@ from pypdf import PdfReader
 from docx import Document
 from pptx import Presentation
 
-
 class DataLoader:
     def __init__(self, input_data: dict):
         self.input_data = input_data
@@ -82,10 +81,13 @@ class DataLoader:
             print(f"Failed to process {item.get('file_path')}: {e}")
             return None
 
-    async def extract_data(self) -> list[dict]:
-        print("Starting async text extraction...")
-        tasks = [self._extract_file(item) for item in self.input_data["files_data"]]
-        results = await asyncio.gather(*tasks)
-        documents = [r for r in results if r is not None]
-        print(f"Extraction completed. {len(documents)} files extracted.")
-        return documents
+    async def extract_data(self):
+        print("Starting streaming text extraction...")
+        for item in self.input_data.get("files_data", []):
+            try:
+                doc = await self._extract_file(item)
+                if doc:
+                    yield doc
+            except Exception as e:
+                print(f"Error processing {item.get('file_path')}: {e}")
+        print("Extraction finished.")

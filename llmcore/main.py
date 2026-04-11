@@ -6,7 +6,6 @@ from llmcore.data_processor.data_loader import DataLoader
 from llmcore.rag.indexer import RAGIndexer
 from llmcore.rag.pipeline import RAGPipeline
 
-
 class TaskExecutor:
     def __init__(self, input_data: dict):
         self.input_data = input_data
@@ -18,10 +17,10 @@ class TaskExecutor:
         await downloader.download_all_files()
 
         loader = DataLoader(self.input_data)
-        documents = await loader.extract_data()
+        doc_generator = loader.extract_data()
 
         indexer = RAGIndexer(model_id=self.input_data["model_id"])
-        indexer.index_documents(documents)
+        await indexer.index_documents(doc_generator)
 
         print("Setup finished successfully.")
 
