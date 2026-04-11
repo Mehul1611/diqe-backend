@@ -68,14 +68,6 @@ export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-slate-950 selection:bg-emerald-500/30 font-sans overflow-hidden">
       <style>{`
-        @keyframes networkGrid {
-          0% { background-position: 0px 0px; }
-          100% { background-position: 40px 40px; }
-        }
-        .network-grid-bg {
-          animation: networkGrid 2.5s linear infinite;
-        }
-        
         @keyframes diqeGlow {
           0%, 100% { 
             text-shadow: 0 0 20px rgba(16, 185, 129, 0.4), 0 0 40px rgba(16, 185, 129, 0.2); 
@@ -113,7 +105,7 @@ export default function Home() {
               
               <div className="absolute bottom-6 left-6 flex items-center space-x-2 z-20">
                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
-                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest bg-black/50 px-2 py-1 rounded backdrop-blur-md">Knowledge Graph Active</span>
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest bg-black/50 px-2 py-1 rounded backdrop-blur-md">RAG Document Intelligence</span>
               </div>
             </motion.div>
 
@@ -250,7 +242,7 @@ export default function Home() {
                 <div className="flex justify-between items-center mt-8 pt-8 border-t border-slate-800/80">
                   <div className="flex items-center space-x-2 text-emerald-600/90 bg-emerald-500/10 px-4 py-2 rounded-full border border-emerald-500/20 shadow-sm">
                     <CheckCircle className="h-4 w-4" />
-                    <span className="text-sm font-semibold tracking-wide">Secure Graph Encryption Active</span>
+                    <span className="text-sm font-semibold tracking-wide">Secure document processing</span>
                   </div>
                   <Button
                     onClick={handleUpload}
