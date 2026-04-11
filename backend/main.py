@@ -1,20 +1,31 @@
 # Author: Mehul Sharma
 # This code is for evaluation purposes only. Unauthorized use is prohibited.
 
-import os
 import json
+import os
 import shutil
+import uvicorn
+from dotenv import load_dotenv
+from fastapi import (
+APIRouter,
+BackgroundTasks,
+FastAPI,
+File,
+HTTPException,
+UploadFile,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pathlib import Path
 from typing import List
-
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, APIRouter
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-import uvicorn
-
+from llmcore.graphrag.graphrag_search import GraphRAGSearch
 from llmcore.main import TaskExecutor
-from .schemas import FileData, ProcessRequest, QueryRequest
+from llmcore.utils.cleanup import cleanup_old_data
+from .schemas import (
+FileData,
+ProcessRequest,
+QueryRequest,
+)
 
 load_dotenv()
 
@@ -33,6 +44,9 @@ class DIQECoreAPI:
         self._register_routes()
 
     def _rag_corpus_path(self, model_id: str) -> Path:
+        jsonl = self.REPO_ROOT / "output" / model_id / "rag" / "corpus.jsonl"
+        if jsonl.exists():
+            return jsonl
         return self.REPO_ROOT / "output" / model_id / "rag" / "corpus.json"
 
     def _doc_id_from_chunk_id(self, chunk_id: str) -> str:
@@ -53,12 +67,21 @@ class DIQECoreAPI:
         doc_ids: set[str] = set()
         if corpus_path.exists():
             try:
-                rows = json.loads(corpus_path.read_text())
-                if isinstance(rows, list):
-                    total_chunks = len(rows)
-                    for row in rows:
-                        cid = row.get("id", "")
-                        doc_ids.add(self._doc_id_from_chunk_id(str(cid)))
+                if corpus_path.suffix == ".jsonl":
+                    with open(corpus_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if line.strip():
+                                row = json.loads(line)
+                                total_chunks += 1
+                                cid = row.get("id", "")
+                                doc_ids.add(self._doc_id_from_chunk_id(str(cid)))
+                else:
+                    rows = json.loads(corpus_path.read_text())
+                    if isinstance(rows, list):
+                        total_chunks = len(rows)
+                        for row in rows:
+                            cid = row.get("id", "")
+                            doc_ids.add(self._doc_id_from_chunk_id(str(cid)))
             except (json.JSONDecodeError, OSError, TypeError):
                 pass
 
@@ -121,29 +144,41 @@ class DIQECoreAPI:
             path = self._rag_corpus_path(model_id)
             if not path.exists():
                 return {"data": []}
+            
+            out = []
             try:
-                rows: list = json.loads(path.read_text())
+                if path.suffix == ".jsonl":
+                    with open(path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if line.strip():
+                                row = json.loads(line)
+                                cid = row.get("id", "")
+                                text = row.get("text", "")
+                                out.append({
+                                    "id": cid,
+                                    "text": text,
+                                    "n_tokens": len(text.split()),
+                                    "document_ids": [self._doc_id_from_chunk_id(cid)],
+                                })
+                else:
+                    rows: list = json.loads(path.read_text())
+                    for row in rows:
+                        cid = row.get("id", "")
+                        text = row.get("text", "")
+                        out.append({
+                            "id": cid,
+                            "text": text,
+                            "n_tokens": len(text.split()),
+                            "document_ids": [self._doc_id_from_chunk_id(cid)],
+                        })
             except (json.JSONDecodeError, OSError):
                 return {"data": []}
-            out = []
-            for row in rows:
-                cid = row.get("id", "")
-                text = row.get("text", "")
-                out.append(
-                    {
-                        "id": cid,
-                        "text": text,
-                        "n_tokens": len(text.split()),
-                        "document_ids": [self._doc_id_from_chunk_id(cid)],
-                    }
-                )
             return {"data": out}
 
         @self.app.get("/model/{model_id}/graph")
         async def get_entity_graph(model_id: str):
             rag_stats = self._rag_index_stats(model_id)
             try:
-                from llmcore.graphrag.graphrag_search import GraphRAGSearch
                 data = GraphRAGSearch(model_id).get_graph_data()
                 data["rag_stats"] = rag_stats
                 return {"data": data}
@@ -162,7 +197,8 @@ class DIQECoreAPI:
             try:
                 rag_dir = self.REPO_ROOT / "output" / model_id / "rag"
                 marker = rag_dir / "index_complete.json"
-                corpus = rag_dir / "corpus.json"
+                corpus_j = rag_dir / "corpus.json"
+                corpus_l = rag_dir / "corpus.jsonl"
 
                 if marker.exists():
                     info = json.loads(marker.read_text())
@@ -172,7 +208,7 @@ class DIQECoreAPI:
                         "message": f"Indexing complete. {info.get('chunk_count', '?')} chunks indexed.",
                     }
 
-                if corpus.exists():
+                if corpus_j.exists() or corpus_l.exists():
                     return {"status": "indexing", "progress": 70, "message": "Building vector index..."}
 
                 extracted_dir = self.REPO_ROOT / "output" / model_id / "extracted"
@@ -205,6 +241,20 @@ class DIQECoreAPI:
                 return {"status": "success", "files": saved_files}
             except Exception as e:
                 print(f"Error uploading files: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/admin/cleanup")
+        async def run_cleanup(hours: int = 24):
+            try:
+                count, errors = cleanup_old_data(retention_hours=hours)
+                return {
+                    "status": "success",
+                    "deleted_count": count,
+                    "errors": errors,
+                    "message": f"Cleanup finished. Removed {count} old project directories."
+                }
+            except Exception as e:
+                print(f"Cleanup failed: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
 api_instance = DIQECoreAPI()

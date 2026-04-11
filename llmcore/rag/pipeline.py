@@ -1,18 +1,16 @@
 import logging
 import re
 import threading
-
+from duckduckgo_search import DDGS
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
-
 from llmcore.constants import LLMConstants, RAGConstants
 from llmcore.rag.prompts import (
-    GLOBAL_PROMPT,
-    RAG_ASSISTANT_PROMPT,
-    TRIVIAL_CHAT_PROMPT,
-    WEB_PROMPT,
+GLOBAL_PROMPT,
+RAG_ASSISTANT_PROMPT,
+TRIVIAL_CHAT_PROMPT,
+WEB_PROMPT,
 )
-from duckduckgo_search import DDGS
 from llmcore.rag.retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)

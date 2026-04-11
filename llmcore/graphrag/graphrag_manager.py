@@ -1,9 +1,9 @@
-from graphrag.config.load_config import load_config
 import graphrag.api as api
+import shutil
+from graphrag.config.load_config import load_config
+from pathlib import Path
 from llmcore.graphrag.graphrag_constants import GraphRAGConstant
 from llmcore.utils.utils import clean_specific_folders
-from pathlib import Path
-import shutil
 
 class GraphRAGManager:
     def __init__(self, input_data: list):
