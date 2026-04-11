@@ -8,18 +8,11 @@ import json
 import numpy as np
 import threading
 
-_hybrid_lock = threading.Lock()
-_hybrid_cache: dict[str, "HybridRetriever"] = {}
-
-
-def get_hybrid_retriever(model_id: str) -> "HybridRetriever":
-    with _hybrid_lock:
-        if model_id not in _hybrid_cache:
-            _hybrid_cache[model_id] = HybridRetriever(model_id)
-        return _hybrid_cache[model_id]
-
+_lock = threading.Lock()
+_cache: dict[str, "HybridRetriever"] = {}
 
 class HybridRetriever:
+
     def __init__(self, model_id: str):
         self.model_id = model_id
         persist_dir = ModelConstant.PathConstant.RAG_OUTPUT_PATH.format(model_id=model_id)
@@ -39,6 +32,13 @@ class HybridRetriever:
         self.corpus_texts: list[str] = [c["text"] for c in corpus]
         tokenized = [t.lower().split() for t in self.corpus_texts]
         self.bm25 = BM25Okapi(tokenized)
+
+    @classmethod
+    def get_instance(cls, model_id: str) -> "HybridRetriever":
+        with _lock:
+            if model_id not in _cache:
+                _cache[model_id] = cls(model_id)
+            return _cache[model_id]
 
     def retrieve(self, query: str) -> list[str]:
         chunks, _ = self.retrieve_with_scores(query)

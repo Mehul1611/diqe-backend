@@ -15,33 +15,11 @@ from graphrag_llm.config import ModelConfig
 from graphrag_llm.completion import create_completion
 from graphrag.tokenizer.get_tokenizer import get_tokenizer
 from graphrag.tokenizer.get_tokenizer import Tokenizer
-from sentence_transformers import SentenceTransformer
+from llmcore.graphrag.embedder import SentenceTransformerEmbedder
 from typing import Tuple, Any, List
 import pandas as pd
 import numpy as np
 import os
-
-
-class SentenceTransformerEmbedder:
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance.model = SentenceTransformer(RAGConstants.EMBEDDING_MODEL)
-        return cls._instance
-
-    def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
-        result = self.model.encode(text)
-        return result.tolist()
-
-    async def aembed(self, text: str) -> list[float]:
-        return self.model.encode(text).tolist()
-
-    def __call__(self, text: str) -> list[float]:
-        return self.model.encode(text).tolist()
-
-
 class GraphRAGSearch:
     def __init__(self, model_id: str) -> None:
         self.model_id = model_id
