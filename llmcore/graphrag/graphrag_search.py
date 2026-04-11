@@ -1,4 +1,5 @@
-from llmcore.constants import GraphRAGConstant, LLMConstants
+from llmcore.constants import LLMConstants, RAGConstants
+from llmcore.graphrag.graphrag_constants import GraphRAGConstant
 from graphrag.query.context_builder.entity_extraction import EntityVectorStoreKey
 from graphrag.query.indexer_adapters import (
     read_indexer_entities,
@@ -12,13 +13,34 @@ from graphrag_vectors.lancedb import LanceDBVectorStore
 from graphrag_vectors.vector_store_config import VectorStoreConfig
 from graphrag_llm.config import ModelConfig
 from graphrag_llm.completion import create_completion
-from graphrag_llm.embedding import create_embedding
 from graphrag.tokenizer.get_tokenizer import get_tokenizer
 from graphrag.tokenizer.get_tokenizer import Tokenizer
+from sentence_transformers import SentenceTransformer
 from typing import Tuple, Any, List
 import pandas as pd
 import numpy as np
 import os
+
+
+class SentenceTransformerEmbedder:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.model = SentenceTransformer(RAGConstants.EMBEDDING_MODEL)
+        return cls._instance
+
+    def embed(self, text: str | list[str]) -> list[float] | list[list[float]]:
+        result = self.model.encode(text)
+        return result.tolist()
+
+    async def aembed(self, text: str) -> list[float]:
+        return self.model.encode(text).tolist()
+
+    def __call__(self, text: str) -> list[float]:
+        return self.model.encode(text).tolist()
+
 
 class GraphRAGSearch:
     def __init__(self, model_id: str) -> None:
@@ -26,22 +48,17 @@ class GraphRAGSearch:
 
     def _get_chat_model(self) -> Tuple[Any, Any]:
         chat_config = ModelConfig(
-            api_key=LLMConstants.OPENAI_API_KEY,
-            model_provider=LLMConstants.MODEL_PROVIDER,
-            model=LLMConstants.GRAPHRAG_CHAT_MODEL,
+            api_key=LLMConstants.GROQ_API_KEY,
+            model_provider=GraphRAGConstant.MODEL_PROVIDER,
+            model=LLMConstants.AGENT_CHAT_MODEL,
+            api_base=LLMConstants.GROQ_BASE_URL,
         )
         chat_model = create_completion(chat_config)
         tokenizer = get_tokenizer(chat_config)
         return chat_model, tokenizer
-    
-    def _get_embedding_model(self) -> Any:
-        embedding_config = ModelConfig(
-            api_key=LLMConstants.OPENAI_API_KEY,
-            model_provider=LLMConstants.MODEL_PROVIDER,
-            model=LLMConstants.EMBEDDINGS_MODEL,
-        )
-        text_embedder = create_embedding(embedding_config)
-        return text_embedder
+
+    def _get_embedding_model(self) -> SentenceTransformerEmbedder:
+        return SentenceTransformerEmbedder()
     
     def _read_parquet_files(self, file_path: str, required: bool = False) -> pd.DataFrame:
         file_name = os.path.basename(file_path)
@@ -104,7 +121,7 @@ class GraphRAGSearch:
     
     def _init_search_engine(self) -> LocalSearch:
         local_context_params = GraphRAGConstant.LOCAL_PARAMETERS
-        model_params = LLMConstants.MODEL_PARAMETERS
+        model_params = GraphRAGConstant.MODEL_PARAMETERS
 
         chat_model, tokenizer = self._get_chat_model()
         context_builder = self._build_context(tokenizer)
@@ -115,7 +132,7 @@ class GraphRAGSearch:
             tokenizer=tokenizer,
             model_params=model_params,
             context_builder_params=local_context_params,
-            response_type=LLMConstants.LOCAL_SEARCH_RESPONSE_TYPE,
+            response_type=GraphRAGConstant.LOCAL_SEARCH_RESPONSE_TYPE,
         )
     
     async def local_search(self, query: str) -> str:
