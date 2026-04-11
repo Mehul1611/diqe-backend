@@ -1,29 +1,36 @@
 from sentence_transformers import SentenceTransformer, CrossEncoder
-from llmcore.constants import RAGConstants
+from llmcore.constants import ModelConstant, RAGConstants
 from pathlib import Path
 from rank_bm25 import BM25Okapi
 import chromadb
-import numpy as np
+from chromadb.config import Settings
 import json
+import numpy as np
+import threading
+
+_hybrid_lock = threading.Lock()
+_hybrid_cache: dict[str, "HybridRetriever"] = {}
+
+
+def get_hybrid_retriever(model_id: str) -> "HybridRetriever":
+    with _hybrid_lock:
+        if model_id not in _hybrid_cache:
+            _hybrid_cache[model_id] = HybridRetriever(model_id)
+        return _hybrid_cache[model_id]
 
 
 class HybridRetriever:
-    """
-    Retrieval pipeline:
-      1. Semantic search  — dense vector similarity via ChromaDB
-      2. Keyword search   — sparse BM25 over the stored corpus
-      3. Fusion           — Reciprocal Rank Fusion merges both result lists
-      4. Reranking        — cross-encoder scores candidates and returns top-k
-    """
-
     def __init__(self, model_id: str):
         self.model_id = model_id
-        persist_dir = RAGConstants.RAG_OUTPUT_PATH.format(model_id=model_id)
+        persist_dir = ModelConstant.PathConstant.RAG_OUTPUT_PATH.format(model_id=model_id)
 
         self.embed_model = SentenceTransformer(RAGConstants.EMBEDDING_MODEL)
         self.reranker = CrossEncoder(RAGConstants.RERANKER_MODEL)
 
-        client = chromadb.PersistentClient(path=persist_dir)
+        client = chromadb.PersistentClient(
+            path=persist_dir,
+            settings=Settings(anonymized_telemetry=False),
+        )
         self.collection = client.get_collection("documents")
 
         corpus_path = Path(persist_dir) / "corpus.json"
@@ -34,7 +41,13 @@ class HybridRetriever:
         self.bm25 = BM25Okapi(tokenized)
 
     def retrieve(self, query: str) -> list[str]:
+        chunks, _ = self.retrieve_with_scores(query)
+        return chunks
+
+    def retrieve_with_scores(self, query: str) -> tuple[list[str], float]:
         n = min(RAGConstants.RETRIEVAL_TOP_K, self.collection.count())
+        if n == 0:
+            return [], float("-inf")
 
         # 1. Semantic
         q_emb = self.embed_model.encode(query, normalize_embeddings=True).tolist()
@@ -60,9 +73,14 @@ class HybridRetriever:
         candidates = [id_to_text[cid] for cid in sorted(rrf, key=rrf.get, reverse=True) if cid in id_to_text]
 
         # 4. Cross-encoder rerank
+        top_score = float("-inf")
         if len(candidates) > 1:
             pairs = [(query, c) for c in candidates]
             rerank_scores = self.reranker.predict(pairs)
-            candidates = [c for _, c in sorted(zip(rerank_scores, candidates), reverse=True)]
+            sorted_pairs = sorted(zip(rerank_scores, candidates), reverse=True)
+            top_score = float(sorted_pairs[0][0])
+            candidates = [c for _, c in sorted_pairs]
+        elif len(candidates) == 1:
+            top_score = float(self.reranker.predict([(query, candidates[0])])[0])
 
-        return candidates[: RAGConstants.RERANK_TOP_K]
+        return candidates[: RAGConstants.RERANK_TOP_K], top_score
