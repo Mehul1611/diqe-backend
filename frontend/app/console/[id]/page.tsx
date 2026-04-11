@@ -306,14 +306,12 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                                     <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
                                         <ModeToggle value={mode} onChange={setMode} language={language} />
                                         <div ref={langPickerRef} className="relative flex items-center">
-                                            {/* Icon: languages by Freepik — www.flaticon.com/free-icon/languages_3898082 */}
                                             <motion.button
                                                 type="button"
                                                 onClick={() => setLangMenuOpen((o) => !o)}
                                                 aria-expanded={langMenuOpen}
                                                 aria-haspopup="listbox"
                                                 aria-label="Response language"
-                                                title="Languages icon by Freepik on Flaticon"
                                                 className={cn(
                                                     'rounded-lg border border-slate-700/50 bg-slate-900/80 p-2 transition-colors hover:border-slate-600 hover:bg-slate-800/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60',
                                                     langMenuOpen && 'border-emerald-500/40 ring-1 ring-emerald-500/30',
