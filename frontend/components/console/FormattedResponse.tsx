@@ -1,3 +1,5 @@
+'use client'
+
 import { useCallback, useState, type ReactNode } from 'react'
 import type { Components } from 'react-markdown'
 import ReactMarkdown from 'react-markdown'

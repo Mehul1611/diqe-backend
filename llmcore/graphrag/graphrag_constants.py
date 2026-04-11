@@ -1,5 +1,3 @@
-"""GraphRAG paths and tuning (kept out of llmcore.constants)."""
-
 from pathlib import Path
 
 _PKG_DIR = Path(__file__).resolve().parent

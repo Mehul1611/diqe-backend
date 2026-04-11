@@ -34,7 +34,7 @@ class HybridRetriever:
         self.bm25 = BM25Okapi(tokenized)
 
     @classmethod
-    def get_instance(cls, model_id: str) -> "HybridRetriever":
+    def get_instance(cls, model_id: str):
         with _lock:
             if model_id not in _cache:
                 _cache[model_id] = cls(model_id)
