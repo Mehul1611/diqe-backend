@@ -16,6 +16,60 @@ load_dotenv()
 from llmcore.main import TaskExecutor
 import uvicorn
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _rag_corpus_path(model_id: str) -> Path:
+    return REPO_ROOT / "output" / model_id / "rag" / "corpus.json"
+
+
+def _doc_id_from_chunk_id(chunk_id: str) -> str:
+    if "_" in chunk_id:
+        head, tail = chunk_id.rsplit("_", 1)
+        if tail.isdigit():
+            return head
+    return chunk_id
+
+
+def _rag_index_stats(model_id: str) -> dict:
+    input_dir = REPO_ROOT / "models" / model_id / "input"
+    uploaded_file_count = 0
+    if input_dir.is_dir():
+        uploaded_file_count = sum(1 for p in input_dir.iterdir() if p.is_file())
+
+    corpus_path = _rag_corpus_path(model_id)
+    total_chunks = 0
+    doc_ids: set[str] = set()
+    if corpus_path.exists():
+        try:
+            rows = json.loads(corpus_path.read_text())
+            if isinstance(rows, list):
+                total_chunks = len(rows)
+                for row in rows:
+                    cid = row.get("id", "")
+                    doc_ids.add(_doc_id_from_chunk_id(str(cid)))
+        except (json.JSONDecodeError, OSError, TypeError):
+            pass
+
+    marker = REPO_ROOT / "output" / model_id / "rag" / "index_complete.json"
+    index_complete = marker.exists()
+    if index_complete:
+        try:
+            info = json.loads(marker.read_text())
+            cc = info.get("chunk_count")
+            if isinstance(cc, int):
+                total_chunks = max(total_chunks, cc)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return {
+        "uploaded_file_count": uploaded_file_count,
+        "indexed_document_count": len(doc_ids),
+        "total_chunks": total_chunks,
+        "index_complete": index_complete,
+    }
+
+
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="DIQE Data Science Core API")
@@ -87,10 +141,54 @@ async def query_documents(request: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/model/{model_id}/sources")
+async def get_rag_sources(model_id: str):
+    path = _rag_corpus_path(model_id)
+    if not path.exists():
+        return {"data": []}
+    try:
+        rows: list = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {"data": []}
+    out = []
+    for row in rows:
+        cid = row.get("id", "")
+        text = row.get("text", "")
+        out.append(
+            {
+                "id": cid,
+                "text": text,
+                "n_tokens": len(text.split()),
+                "document_ids": [_doc_id_from_chunk_id(cid)],
+            }
+        )
+    return {"data": out}
+
+
+@app.get("/model/{model_id}/graph")
+async def get_entity_graph(model_id: str):
+    rag_stats = _rag_index_stats(model_id)
+    try:
+        from llmcore.graphrag.graphrag_search import GraphRAGSearch
+
+        data = GraphRAGSearch(model_id).get_graph_data()
+        data["rag_stats"] = rag_stats
+        return {"data": data}
+    except Exception as exc:
+        print(f"Entity graph unavailable for {model_id}: {exc}")
+        return {
+            "data": {
+                "entities": [],
+                "relationships": [],
+                "rag_stats": rag_stats,
+            }
+        }
+
+
 @app.get("/api/status/{model_id}")
 async def get_processing_status(model_id: str):
     try:
-        repo_root = Path(__file__).resolve().parents[1]
+        repo_root = REPO_ROOT
         rag_dir = repo_root / "output" / model_id / "rag"
         marker = rag_dir / "index_complete.json"
         corpus = rag_dir / "corpus.json"
