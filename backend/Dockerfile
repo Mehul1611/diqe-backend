@@ -22,4 +22,5 @@ COPY llmcore/ ./llmcore/
 EXPOSE 8000
 
 # Run the application
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# graphrag_llm uses nest_asyncio2, which cannot patch uvloop; use stdlib asyncio loop
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "asyncio"]
