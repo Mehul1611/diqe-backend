@@ -9,10 +9,9 @@ class ModelConstant:
 
 
 class RAGConstants:
-    EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
-    RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 
-    EMBEDDING_DIMS = 768
+    EMBEDDING_DIMS = 384
     CHUNK_SIZE = 512
     CHUNK_OVERLAP = 100
     INDEX_BATCH_SIZE = 100

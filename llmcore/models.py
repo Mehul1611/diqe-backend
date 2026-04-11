@@ -1,24 +1,40 @@
 import threading
-from sentence_transformers import CrossEncoder, SentenceTransformer
+import numpy as np
+from fastembed import TextEmbedding
 from llmcore.constants import RAGConstants
 
+
+class _EmbeddingAdapter:
+    def __init__(self, model: TextEmbedding):
+        self._model = model
+
+    def encode(self, text: str, normalize_embeddings: bool = True) -> np.ndarray:
+        embeddings = list(self._model.embed([text]))
+        return np.array(embeddings[0])
+
+
+class _DummyReranker:
+    def predict(self, pairs: list) -> list:
+        return [0.0] * len(pairs)
+
+
 class ModelProvider:
-    _embedding_model = None
-    _reranker_model = None
+    _embedding_model: "_EmbeddingAdapter | None" = None
+    _reranker_model: "_DummyReranker | None" = None
     _lock = threading.Lock()
 
     @classmethod
-    def get_embedding_model(cls) -> SentenceTransformer:
+    def get_embedding_model(cls) -> _EmbeddingAdapter:
         with cls._lock:
             if cls._embedding_model is None:
                 print(f"Loading embedding model: {RAGConstants.EMBEDDING_MODEL}")
-                cls._embedding_model = SentenceTransformer(RAGConstants.EMBEDDING_MODEL)
-            return cls._embedding_model
+                model = TextEmbedding(RAGConstants.EMBEDDING_MODEL)
+                cls._embedding_model = _EmbeddingAdapter(model)
+        return cls._embedding_model
 
     @classmethod
-    def get_reranker_model(cls) -> CrossEncoder:
+    def get_reranker_model(cls) -> _DummyReranker:
         with cls._lock:
             if cls._reranker_model is None:
-                print(f"Loading reranker model: {RAGConstants.RERANKER_MODEL}")
-                cls._reranker_model = CrossEncoder(RAGConstants.RERANKER_MODEL)
-            return cls._reranker_model
+                cls._reranker_model = _DummyReranker()
+        return cls._reranker_model

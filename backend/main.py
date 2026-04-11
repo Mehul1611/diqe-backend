@@ -18,7 +18,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pathlib import Path
 from typing import List
-from llmcore.graphrag.graphrag_search import GraphRAGSearch
 from llmcore.main import TaskExecutor
 from llmcore.utils.cleanup import cleanup_old_data
 from .schemas import (
@@ -178,19 +177,13 @@ class DIQECoreAPI:
         @self.app.get("/model/{model_id}/graph")
         async def get_entity_graph(model_id: str):
             rag_stats = self._rag_index_stats(model_id)
-            try:
-                data = GraphRAGSearch(model_id).get_graph_data()
-                data["rag_stats"] = rag_stats
-                return {"data": data}
-            except Exception as exc:
-                print(f"Entity graph unavailable for {model_id}: {exc}")
-                return {
-                    "data": {
-                        "entities": [],
-                        "relationships": [],
-                        "rag_stats": rag_stats,
-                    }
+            return {
+                "data": {
+                    "entities": [],
+                    "relationships": [],
+                    "rag_stats": rag_stats,
                 }
+            }
 
         @self.app.get("/api/status/{model_id}")
         async def get_processing_status(model_id: str):
@@ -261,4 +254,4 @@ api_instance = DIQECoreAPI()
 app = api_instance.app
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000, loop="asyncio")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
