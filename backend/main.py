@@ -1,27 +1,31 @@
 # Author: Mehul Sharma
 # This code is for evaluation purposes only. Unauthorized use is prohibited.
 
-import os
 import json
+import os
 import shutil
+import uvicorn
+from dotenv import load_dotenv
+from fastapi import (
+APIRouter,
+BackgroundTasks,
+FastAPI,
+File,
+HTTPException,
+UploadFile,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pathlib import Path
 from typing import List
-from fastapi import (
-FastAPI, 
-HTTPException, 
-UploadFile, 
-File, 
-BackgroundTasks, APIRouter)
-
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-import uvicorn
-
-from llmcore.main import TaskExecutor
 from llmcore.graphrag.graphrag_search import GraphRAGSearch
+from llmcore.main import TaskExecutor
 from llmcore.utils.cleanup import cleanup_old_data
-from .schemas import FileData, ProcessRequest, QueryRequest
+from .schemas import (
+FileData,
+ProcessRequest,
+QueryRequest,
+)
 
 load_dotenv()
 

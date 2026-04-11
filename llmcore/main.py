@@ -1,11 +1,10 @@
 # Author: Mehul Sharma
 # This code is for evaluation purposes only. Unauthorized use is prohibited.
 
-from llmcore.data_processor.download_files import DownloadFiles
 from llmcore.data_processor.data_loader import DataLoader
+from llmcore.data_processor.download_files import DownloadFiles
 from llmcore.rag.indexer import RAGIndexer
 from llmcore.rag.pipeline import RAGPipeline
-
 class TaskExecutor:
     def __init__(self, input_data: dict):
         self.input_data = input_data

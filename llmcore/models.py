@@ -1,6 +1,6 @@
-from sentence_transformers import SentenceTransformer, CrossEncoder
-from llmcore.constants import RAGConstants
 import threading
+from sentence_transformers import CrossEncoder, SentenceTransformer
+from llmcore.constants import RAGConstants
 
 class ModelProvider:
     _embedding_model = None

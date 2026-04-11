@@ -1,9 +1,9 @@
-import os
-import csv
 import asyncio
-from pypdf import PdfReader
+import csv
+import os
 from docx import Document
 from pptx import Presentation
+from pypdf import PdfReader
 
 class DataLoader:
     def __init__(self, input_data: dict):
