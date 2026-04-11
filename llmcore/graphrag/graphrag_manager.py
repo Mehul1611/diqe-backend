@@ -1,6 +1,6 @@
 from graphrag.config.load_config import load_config
 import graphrag.api as api
-from llmcore.constants import GraphRAGConstant
+from llmcore.graphrag.graphrag_constants import GraphRAGConstant
 from llmcore.utils.utils import clean_specific_folders
 from pathlib import Path
 import shutil

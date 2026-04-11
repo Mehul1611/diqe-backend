@@ -1,8 +1,9 @@
 from sentence_transformers import SentenceTransformer
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from llmcore.constants import RAGConstants
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from llmcore.constants import ModelConstant, RAGConstants
 from pathlib import Path
 import chromadb
+from chromadb.config import Settings
 import json
 import os
 
@@ -10,11 +11,14 @@ import os
 class RAGIndexer:
     def __init__(self, model_id: str):
         self.model_id = model_id
-        self.persist_dir = RAGConstants.RAG_OUTPUT_PATH.format(model_id=model_id)
+        self.persist_dir = ModelConstant.PathConstant.RAG_OUTPUT_PATH.format(model_id=model_id)
         os.makedirs(self.persist_dir, exist_ok=True)
 
         self.embed_model = SentenceTransformer(RAGConstants.EMBEDDING_MODEL)
-        self.client = chromadb.PersistentClient(path=self.persist_dir)
+        self.client = chromadb.PersistentClient(
+            path=self.persist_dir,
+            settings=Settings(anonymized_telemetry=False),
+        )
         self.collection = self.client.get_or_create_collection(
             name="documents",
             metadata={"hnsw:space": "cosine"},

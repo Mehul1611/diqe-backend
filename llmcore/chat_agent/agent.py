@@ -15,11 +15,20 @@ class ChatAgentExecutor:
         self.agent_executor = self._init_agent()
 
     def _init_llm(self, mode: str) -> ChatGroq:
-        temperature = 0.7 if mode == "thinking" else 0.0
+        if mode == "thinking":
+            return ChatGroq(
+                model=LLMConstants.THINKING_CHAT_MODEL,
+                api_key=LLMConstants.GROQ_API_KEY,
+                base_url=LLMConstants.GROQ_CLIENT_BASE_URL,
+                temperature=0.2,
+                reasoning_effort="high",
+                reasoning_format="hidden",
+            )
         return ChatGroq(
             model=LLMConstants.AGENT_CHAT_MODEL,
             api_key=LLMConstants.GROQ_API_KEY,
-            temperature=temperature,
+            base_url=LLMConstants.GROQ_CLIENT_BASE_URL,
+            temperature=0.0,
         )
 
     def _init_agent(self):
