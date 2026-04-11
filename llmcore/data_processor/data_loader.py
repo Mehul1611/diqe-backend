@@ -4,16 +4,16 @@ import asyncio
 from pypdf import PdfReader
 from docx import Document
 from pptx import Presentation
-from llmcore.constants import GraphRAGConstant
+
 
 class DataLoader:
-    def __init__(self, input_data: list):
+    def __init__(self, input_data: dict):
         self.input_data = input_data
         self.model_id = input_data["model_id"]
 
     def _read_csv(self, path: str) -> str:
         content = []
-        with open(path, mode='r', encoding='utf-8') as f:
+        with open(path, mode="r", encoding="utf-8") as f:
             reader = csv.reader(f)
             for row in reader:
                 content.append(", ".join(row))
@@ -36,15 +36,16 @@ class DataLoader:
         pres = Presentation(path)
         slides = []
         for slide in pres.slides:
-            slide_text = []
-            for shape in slide.shapes:
-                if hasattr(shape, "text") and shape.text.strip():
-                    slide_text.append(shape.text.strip())
+            slide_text = [
+                shape.text.strip()
+                for shape in slide.shapes
+                if hasattr(shape, "text") and shape.text.strip()
+            ]
             slides.append("\n".join(slide_text))
         return "\n\n".join(slides)
 
-    def _get_file_handler(self, extension: str): 
-        file_handlers = {
+    def _get_file_handler(self, extension: str):
+        return {
             ".pdf": self._read_pdf,
             ".csv": self._read_csv,
             ".doc": self._read_doc,
@@ -53,50 +54,38 @@ class DataLoader:
             ".pptx": self._read_ppt,
             ".txt": self._read_txt,
             ".md": self._read_txt,
+        }.get(extension)
+
+    def _extract_file_sync(self, item: dict) -> dict | None:
+        file_path = item.get("file_path", "")
+        if not os.path.exists(file_path):
+            print(f"File not found: {file_path}")
+            return None
+
+        extension = os.path.splitext(file_path)[1].lower()
+        handler = self._get_file_handler(extension)
+        if not handler:
+            print(f"Unsupported file type: {file_path}")
+            return None
+
+        text = handler(file_path)
+        return {
+            "doc_id": item.get("doc_id", os.path.basename(file_path)),
+            "title": item.get("title", os.path.basename(file_path)),
+            "text": text,
         }
-        return file_handlers.get(extension)
 
-    def _process_file_sync(self, file_path: str):
+    async def _extract_file(self, item: dict) -> dict | None:
         try:
-            if not os.path.exists(file_path):
-                 print(f"File not found: {file_path}")
-                 return False
-
-            extension = os.path.splitext(file_path)[1].lower()
-            file_handler = self._get_file_handler(extension)
-
-            if not file_handler:
-                print(f"Unsupported file type: {file_path}")
-                return True
-
-            output_dir = GraphRAGConstant.PathConstant.GRAPHRAG_INPUT_FOLDER.format(model_id=self.model_id)
-            os.makedirs(output_dir, exist_ok=True)
-            output_path = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}.txt")
-
-            if os.path.exists(output_path):
-                print(f"Skipping existing file: {output_path}")
-                return True
-
-            content = file_handler(file_path)
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return True
-
+            return await asyncio.to_thread(self._extract_file_sync, item)
         except Exception as e:
-            print(f"Failed to process {file_path}: {e}")
-            raise
-    
-    async def _process_file(self, item: dict):
-        file_path = item.get("file_path")
-        try:
-            return await asyncio.to_thread(self._process_file_sync, file_path)
+            print(f"Failed to process {item.get('file_path')}: {e}")
+            return None
 
-        except Exception as e:
-            print(f"Failed to process {file_path}: {e}")
-            return False
-
-    async def extract_data(self):
+    async def extract_data(self) -> list[dict]:
         print("Starting async text extraction...")
-        tasks = [self._process_file(item) for item in self.input_data["files_data"]]
+        tasks = [self._extract_file(item) for item in self.input_data["files_data"]]
         results = await asyncio.gather(*tasks)
-        print(f"Extraction completed. Processed: {sum(results)} files.")
+        documents = [r for r in results if r is not None]
+        print(f"Extraction completed. {len(documents)} files extracted.")
+        return documents

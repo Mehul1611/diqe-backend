@@ -61,7 +61,7 @@ export const api = {
 
     getGraph: async (modelId: string) => {
         const res = await fetch(`${API_BASE}/model/${modelId}/graph`)
-        if (!res.ok) throw new Error('Failed to fetch graph data')
+        if (!res.ok) throw new Error('Failed to fetch data')
         return res.json()
     },
 

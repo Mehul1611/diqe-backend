@@ -8,12 +8,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import NetworkCanvas from '@/components/NetworkCanvas'
 
 const steps = [
-    { id: 1, title: "Document Upload", description: "Securely transferring file to processing core." },
-    { id: 2, title: "Text Extraction", description: "Parsing PDF/Docx structure and metadata." },
-    { id: 3, title: "Knowledge Construction", description: "Building GraphRAG nodes and relationships." },
-    { id: 4, title: "Indexing", description: "Optimizing vectors for high-precision retrieval." },
+    { id: 1, title: "Document upload", description: "Receiving files in the processing workspace." },
+    { id: 2, title: "Text extraction", description: "Parsing PDF, DOCX, and PPTX content." },
+    { id: 3, title: "RAG indexing", description: "Chunking, embeddings, and vector store for retrieval." },
+    { id: 4, title: "Index ready", description: "Corpus indexed; opening the query console." },
 ]
 
 export default function StatusPage({ params }: { params: Promise<{ id: string }> }) {
@@ -31,7 +32,7 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
         const pollStatus = async () => {
             try {
                 const data = await api.getStatus(id)
-                console.log("Status update:", data)
+                console.log("[RAG pipeline] status:", data)
 
                 if (data.progress !== undefined) setProgress(data.progress)
                 if (data.message) setStatusMessage(data.message)
@@ -58,7 +59,7 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
                     timer = setTimeout(pollStatus, 3000)
                 }
             } catch (err) {
-                console.error("Polling error:", err)
+                console.error("[RAG pipeline] poll error:", err)
                 setError("Failed to fetch status updates. Retrying...")
                 timer = setTimeout(pollStatus, 5000)
             }
@@ -71,20 +72,28 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
 
 
     return (
-        <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+        <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 p-6">
+            <NetworkCanvas />
+            <div
+                className="pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-950/80 via-transparent to-emerald-950/15"
+                aria-hidden
+            />
 
-            <Card className="z-10 w-full max-w-2xl border-slate-800 bg-slate-900/80 backdrop-blur-xl">
+            <Card className="relative z-10 w-full max-w-2xl border-slate-800 bg-slate-900/85 shadow-[0_0_60px_rgba(16,185,129,0.06)] backdrop-blur-xl">
                 <CardHeader>
                     <CardTitle className="flex items-center space-x-2 text-2xl">
                         <Loader2 className={`h-6 w-6 text-emerald-500 ${!isComplete && 'animate-spin'}`} />
-                        <span>Processing Document</span>
+                        <span>Indexing</span>
                     </CardTitle>
                     <CardDescription>
-                        Tracking pipeline status for Batch ID: <span className="font-mono text-emerald-400">{id.slice(0, 8)}...</span>
+                        Indexing for model <span className="font-mono text-emerald-400">{id.slice(0, 8)}…</span>
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-8">
+                    <p className="rounded-lg border border-slate-800 bg-slate-950/50 px-4 py-3 font-mono text-xs text-slate-400">
+                        <span className="text-slate-500">Log: </span>
+                        {statusMessage}
+                    </p>
                     <div className="space-y-6">
                         {steps.map((step) => {
                             const isCompleted = currentStep > step.id || (currentStep === step.id && isComplete)
