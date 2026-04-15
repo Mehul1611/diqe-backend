@@ -1,9 +1,13 @@
+import logging
 from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from llmcore.chat_agent.prompt import AGENT_SYSTEM_PROMPT
 from llmcore.chat_agent.tools import get_tools
 from llmcore.constants import LLMConstants
+
+logger = logging.getLogger(__name__)
+
 
 class ChatAgentExecutor:
     def __init__(self, model_id: str, language: str, mode: str):
@@ -39,12 +43,16 @@ class ChatAgentExecutor:
     async def stream_execute(self, query: str, search_type: str):
         input_msg = f"query mode is: '{search_type}'. Question: {query}"
         async for event in self.agent_executor.astream_events(
-            {"messages": [("user", input_msg)]}, 
-            version="v2"
+            {"messages": [("user", input_msg)]},
+            version="v2",
         ):
             if event["event"] == "on_tool_start":
-                print(f"Agent using tool: {event['name']} with input: {event['data'].get('input')}")
-            
+                logger.info(
+                    "Agent using tool: %s with input: %s",
+                    event["name"],
+                    event["data"].get("input"),
+                )
+
             if event["event"] == "on_chat_model_stream":
                 chunk = event["data"]["chunk"].content
                 if chunk and isinstance(chunk, str):

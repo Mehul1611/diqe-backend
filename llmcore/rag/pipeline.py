@@ -6,10 +6,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 from llmcore.constants import LLMConstants, RAGConstants
 from llmcore.rag.prompts import (
-GLOBAL_PROMPT,
-RAG_ASSISTANT_PROMPT,
-TRIVIAL_CHAT_PROMPT,
-WEB_PROMPT,
+    GLOBAL_PROMPT,
+    RAG_ASSISTANT_PROMPT,
+    TRIVIAL_CHAT_PROMPT,
+    WEB_PROMPT,
 )
 from llmcore.rag.retriever import HybridRetriever
 
@@ -26,9 +26,9 @@ _TRIVIAL_EXACT = frozenset(
     }
 )
 
+
 class RAGPipeline:
     def _get_fast_trivial_llm(self) -> ChatGroq:
-        """Small fast model + low max_tokens for greetings (skips thinking model & retrieval)."""
         global _fast_trivial_llm
         with _fast_trivial_lock:
             if _fast_trivial_llm is None:
@@ -81,8 +81,9 @@ class RAGPipeline:
                 lines.append(title)
         return "\n".join(lines)
 
-    def __init__(self, model_id: str, language: str = "English", mode: str = "fast"):
+    def __init__(self, model_id: str, user_id: str = "default", language: str = "English", mode: str = "fast"):
         self.model_id = model_id
+        self.user_id = user_id
         self.language = language
         self.mode = mode
         self.llm = self._build_llm()
@@ -148,7 +149,7 @@ class RAGPipeline:
                     yield token.content
             return
 
-        retriever = HybridRetriever.get_instance(self.model_id)
+        retriever = HybridRetriever.get_instance(self.model_id, self.user_id)
         chunks, top_score = retriever.retrieve_with_scores(query)
 
         if self._should_skip_local_excerpts(chunks, top_score):

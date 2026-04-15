@@ -1,7 +1,10 @@
+import logging
 import threading
 import numpy as np
 from fastembed import TextEmbedding
 from llmcore.constants import RAGConstants
+
+logger = logging.getLogger(__name__)
 
 
 class _EmbeddingAdapter:
@@ -27,7 +30,7 @@ class ModelProvider:
     def get_embedding_model(cls) -> _EmbeddingAdapter:
         with cls._lock:
             if cls._embedding_model is None:
-                print(f"Loading embedding model: {RAGConstants.EMBEDDING_MODEL}")
+                logger.info("Loading embedding model: %s", RAGConstants.EMBEDDING_MODEL)
                 model = TextEmbedding(RAGConstants.EMBEDDING_MODEL)
                 cls._embedding_model = _EmbeddingAdapter(model)
         return cls._embedding_model

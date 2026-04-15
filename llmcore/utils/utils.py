@@ -1,9 +1,13 @@
+import logging
 import shutil
 from typing import List
 
+logger = logging.getLogger(__name__)
+
+
 def clean_specific_folders(base_path: str, folders: List[str]) -> None:
     if not base_path.exists():
-        print(f"Base path does not exist: {base_path}")
+        logger.warning("Base path does not exist: %s", base_path)
         return
 
     for folder_name in folders:
@@ -11,8 +15,8 @@ def clean_specific_folders(base_path: str, folders: List[str]) -> None:
         if folder_path.exists() and folder_path.is_dir():
             try:
                 shutil.rmtree(folder_path)
-                print(f"Deleted folder: {folder_path}")
+                logger.info("Deleted folder: %s", folder_path)
             except Exception as e:
-                print(f"Failed to delete folder {folder_path}: {e}")
+                logger.error("Failed to delete folder %s: %s", folder_path, e)
         else:
-            print(f"Folder not found or already deleted: {folder_path}")
+            logger.info("Folder not found or already deleted: %s", folder_path)
