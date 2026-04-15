@@ -88,7 +88,33 @@ npm run dev
 
 ## License
 
-All rights reserved. See `LICENSE`.
+**Proprietary — all rights reserved.** This is not open source. The repository may be public for evaluation only; that does **not** permit use, copying, forking for reuse, or distribution. See the full terms in [`LICENSE`](LICENSE) (also served from the deployed app as `/LICENSE.txt`).
+
+## Production notes (self-hosted)
+
+This project supports two RAG backends:
+
+- **Local (default)**: no external database; vector index is persisted on disk under `output/<model_id>/rag_local/`.
+- **Postgres (pgvector)**: store embeddings in Postgres via `pgvector` (recommended when you want multi-instance scaling or centralized persistence).
+
+### Environment
+
+Create a `.env` file (see `.env.example`).
+
+### Postgres (optional)
+
+If you want Postgres in production without a managed service, you can run it alongside the API:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Then set:
+
+```env
+RAG_BACKEND=postgres
+PGVECTOR_CONNECTION_STRING=postgresql+psycopg://diqe:diqe_password_change_me@localhost:5432/diqe
+```
 
 ## Contributing
 

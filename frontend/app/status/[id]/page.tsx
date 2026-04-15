@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { CheckCircle2, Circle, Loader2, ArrowRight } from 'lucide-react'
+import { CheckCircle2, Circle, Loader2, ArrowRight, Clock, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { api } from '@/lib/api'
@@ -17,6 +17,24 @@ const steps = [
     { id: 4, title: "Index ready", description: "Corpus indexed; opening the query console." },
 ]
 
+function useElapsedTime(running: boolean) {
+    const [elapsed, setElapsed] = useState(0)
+    const startRef = useRef(Date.now())
+    useEffect(() => {
+        if (!running) return
+        startRef.current = Date.now()
+        const id = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)), 1000)
+        return () => clearInterval(id)
+    }, [running])
+    return elapsed
+}
+
+function formatElapsed(secs: number) {
+    const m = Math.floor(secs / 60)
+    const s = secs % 60
+    return m > 0 ? `${m}m ${s}s` : `${s}s`
+}
+
 export default function StatusPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params)
     const router = useRouter()
@@ -25,6 +43,10 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
     const [statusMessage, setStatusMessage] = useState('Checking pipeline status...')
     const [isComplete, setIsComplete] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [lastStatusChangeAt, setLastStatusChangeAt] = useState(Date.now())
+    const lastStatusRef = useRef<string>('')
+    const elapsed = useElapsedTime(!isComplete)
+    const isStuck = !isComplete && elapsed > 90 && (Date.now() - lastStatusChangeAt) > 90_000
 
     useEffect(() => {
         let timer: NodeJS.Timeout
@@ -37,12 +59,16 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
                 if (data.progress !== undefined) setProgress(data.progress)
                 if (data.message) setStatusMessage(data.message)
 
+                if (data.status !== lastStatusRef.current) {
+                    lastStatusRef.current = data.status
+                    setLastStatusChangeAt(Date.now())
+                }
+
                 if (data.status === 'completed') {
                     setCurrentStep(4)
                     setIsComplete(true)
                     router.replace(`/console/${id}`)
                 } else if (data.status === 'indexing') {
-                    // Map progress to steps 1-4 for visual representation
                     if (data.progress < 75) setCurrentStep(2)
                     else if (data.progress < 95) setCurrentStep(3)
                     else setCurrentStep(4)
@@ -81,15 +107,41 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
 
             <Card className="relative z-10 w-full max-w-2xl border-slate-800 bg-slate-900/85 shadow-[0_0_60px_rgba(16,185,129,0.06)] backdrop-blur-xl">
                 <CardHeader>
-                    <CardTitle className="flex items-center space-x-2 text-2xl">
-                        <Loader2 className={`h-6 w-6 text-emerald-500 ${!isComplete && 'animate-spin'}`} />
-                        <span>Indexing</span>
+                    <CardTitle className="flex items-center justify-between text-2xl">
+                        <div className="flex items-center space-x-2">
+                            <Loader2 className={`h-6 w-6 text-emerald-500 ${!isComplete && 'animate-spin'}`} />
+                            <span>Indexing</span>
+                        </div>
+                        {!isComplete && (
+                            <div className="flex items-center gap-1.5 text-sm font-normal text-slate-400">
+                                <Clock className="h-4 w-4" />
+                                <span className="font-mono tabular-nums">{formatElapsed(elapsed)}</span>
+                            </div>
+                        )}
                     </CardTitle>
                     <CardDescription>
                         Indexing for model <span className="font-mono text-emerald-400">{id.slice(0, 8)}…</span>
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-8">
+                    {!isComplete && (
+                        <div className="flex items-start gap-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-300/80">
+                            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                            <span>
+                                Initial setup can take <span className="font-semibold text-emerald-300">4–5 minutes</span> — please keep this tab open until the process is complete.
+                            </span>
+                        </div>
+                    )}
+
+                    {isStuck && (
+                        <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-300/80">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                            <span>
+                                Pipeline is still running — this is normal for larger documents.
+                            </span>
+                        </div>
+                    )}
+
                     <p className="rounded-lg border border-slate-800 bg-slate-950/50 px-4 py-3 font-mono text-xs text-slate-400">
                         <span className="text-slate-500">Log: </span>
                         {statusMessage}

@@ -1,12 +1,11 @@
 from langchain_core.tools import tool
-from llmcore.rag.retriever import HybridRetriever
+from llmcore.rag.retriever import VectorDBSearch
 
 
 def get_tools(model_id: str):
     @tool
     async def search_documents(search_query: str) -> str:
-        retriever = HybridRetriever.get_instance(model_id)
-        chunks = retriever.retrieve(search_query)
-        return "\n\n---\n\n".join(chunks) if chunks else "No relevant context found."
+        searcher = VectorDBSearch.get_instance(model_id)
+        return await searcher.get_docs(search_query)
 
     return [search_documents]

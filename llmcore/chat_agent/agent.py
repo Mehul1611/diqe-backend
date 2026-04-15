@@ -1,9 +1,11 @@
-from langchain.agents import create_agent
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage
 from langchain_groq import ChatGroq
+from langgraph.prebuilt import create_react_agent
+
 from llmcore.chat_agent.prompt import AGENT_SYSTEM_PROMPT
 from llmcore.chat_agent.tools import get_tools
 from llmcore.constants import LLMConstants
+
 
 class ChatAgentExecutor:
     def __init__(self, model_id: str, language: str, mode: str):
@@ -33,18 +35,26 @@ class ChatAgentExecutor:
 
     def _init_agent(self):
         system_prompt = AGENT_SYSTEM_PROMPT.format(language=self.language)
-        agent = create_agent(self.llm, self.tools, system_prompt=system_prompt)
-        return agent
+        return create_react_agent(
+            model=self.llm,
+            tools=self.tools,
+            prompt=SystemMessage(content=system_prompt),
+            # Keep logs minimal; tool calls are already printed in stream_execute.
+            verbose=False,
+        )
 
     async def stream_execute(self, query: str, search_type: str):
         input_msg = f"query mode is: '{search_type}'. Question: {query}"
         async for event in self.agent_executor.astream_events(
-            {"messages": [("user", input_msg)]}, 
-            version="v2"
+            {"messages": [("user", input_msg)]},
+            version="v2",
         ):
             if event["event"] == "on_tool_start":
-                print(f"Agent using tool: {event['name']} with input: {event['data'].get('input')}")
-            
+                print(
+                    f"Agent using tool: {event['name']} "
+                    f"with input: {event['data'].get('input')}"
+                )
+
             if event["event"] == "on_chat_model_stream":
                 chunk = event["data"]["chunk"].content
                 if chunk and isinstance(chunk, str):
