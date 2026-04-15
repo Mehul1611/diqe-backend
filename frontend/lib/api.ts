@@ -7,6 +7,11 @@ export interface FileData {
     title: string
 }
 
+export interface ChatMessagePayload {
+    role: 'user' | 'assistant'
+    content: string
+}
+
 export const api = {
     processDocument: async (modelId: string, files: FileData[]) => {
         const res = await fetch(`${API_BASE}/process`, {
@@ -21,7 +26,14 @@ export const api = {
         return res.json()
     },
 
-    queryDocument: async (modelId: string, query: string, type: 'local' | 'global' = 'local', language: string = 'English', mode: string = 'fast') => {
+    queryDocument: async (
+        modelId: string,
+        query: string,
+        type: 'local' | 'global' = 'local',
+        language: string = 'English',
+        mode: string = 'fast',
+        chatHistory: ChatMessagePayload[] = []
+    ) => {
         const res = await fetch(`${API_BASE}/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -30,14 +42,22 @@ export const api = {
                 query: query,
                 type: type,
                 language: language,
-                mode: mode
+                mode: mode,
+                chat_history: chatHistory,
             })
         })
         if (!res.ok) throw new Error('Query failed')
         return res.json()
     },
 
-    streamQueryDocument: async (modelId: string, query: string, type: 'local' | 'global' = 'local', language: string = 'English', mode: string = 'fast') => {
+    streamQueryDocument: async (
+        modelId: string,
+        query: string,
+        type: 'local' | 'global' = 'local',
+        language: string = 'English',
+        mode: string = 'fast',
+        chatHistory: ChatMessagePayload[] = []
+    ) => {
         const res = await fetch(`${API_BASE}/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -46,7 +66,8 @@ export const api = {
                 query: query,
                 type: type,
                 language: language,
-                mode: mode
+                mode: mode,
+                chat_history: chatHistory,
             })
         })
         if (!res.ok) throw new Error('Query failed')

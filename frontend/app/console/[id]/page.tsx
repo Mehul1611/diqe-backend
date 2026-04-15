@@ -96,12 +96,23 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
         if (!query.trim()) return
 
         const tempQuery = query
+        const chatHistoryPayload = messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+        }))
         setMessages((prev) => [...prev, { role: 'user', content: tempQuery }])
         setQuery('')
         setIsSearching(true)
 
         try {
-            const res = await api.streamQueryDocument(id, tempQuery, searchType, language, mode)
+            const res = await api.streamQueryDocument(
+                id,
+                tempQuery,
+                searchType,
+                language,
+                mode,
+                chatHistoryPayload
+            )
             const reader = res.body?.getReader()
             const decoder = new TextDecoder('utf-8')
 
@@ -133,15 +144,11 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
     }
 
     const loadSources = async () => {
-        if (sources.length > 0) {
-            setView('sources')
-            return
-        }
+        setView('sources')
         setLoadingData(true)
         try {
             const res = await api.getSources(id)
-            setSources(res.data)
-            setView('sources')
+            setSources(res.data ?? [])
         } catch (e) {
             console.error('Failed to load sources', e)
         } finally {
