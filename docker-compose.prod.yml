@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: diqe
+      POSTGRES_PASSWORD: diqe_password_change_me
+      POSTGRES_DB: diqe
+    ports:
+      - "5432:5432"
+    volumes:
+      - diqe_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diqe -d diqe"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  diqe_pgdata:
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: diqe
+      POSTGRES_PASSWORD: uy2t3l12
+      POSTGRES_DB: diqe
+    ports:
+      - "5432:5432"
+    volumes:
+      - diqe_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diqe -d diqe"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  diqe_pgdata:
+
