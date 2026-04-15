@@ -1,27 +1,16 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { ArrowRight, BookOpen, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
-import { useAuth } from '@/contexts/AuthContext'
 import NetworkCanvas from '@/components/NetworkCanvas'
 import DenseGraph from '@/components/DenseGraph'
 import { supabase } from '@/lib/supabase'
 
-export default function Home() {
-    const router = useRouter()
-    const { user, loading } = useAuth()
+export default function GetStartedPage() {
     const [instructionsOpen, setInstructionsOpen] = useState(false)
-
     const closeInstructions = useCallback(() => setInstructionsOpen(false), [])
-
-    useEffect(() => {
-        if (!loading && user) {
-            router.replace('/dashboard')
-        }
-    }, [user, loading, router])
 
     useEffect(() => {
         if (!instructionsOpen) return
@@ -325,3 +314,4 @@ export default function Home() {
         </main>
     )
 }
+

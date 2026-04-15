@@ -7,6 +7,7 @@ import { CheckCircle2, Circle, Loader2, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { api } from '@/lib/api'
+import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
 import NetworkCanvas from '@/components/NetworkCanvas'
 
@@ -20,6 +21,8 @@ const steps = [
 export default function StatusPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params)
     const router = useRouter()
+    const { session } = useAuth()
+    const token = session?.access_token ?? ''
     const [currentStep, setCurrentStep] = useState(1)
     const [progress, setProgress] = useState(0)
     const [statusMessage, setStatusMessage] = useState('Checking pipeline status...')
@@ -31,7 +34,7 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
 
         const pollStatus = async () => {
             try {
-                const data = await api.getStatus(id)
+                const data = await api.getStatus(id, token)
                 console.log("[RAG pipeline] status:", data)
 
                 if (data.progress !== undefined) setProgress(data.progress)
@@ -40,6 +43,11 @@ export default function StatusPage({ params }: { params: Promise<{ id: string }>
                 if (data.status === 'completed') {
                     setCurrentStep(4)
                     setIsComplete(true)
+                    try {
+                        await api.updateModel(id, { status: 'ready' }, token)
+                    } catch (e) {
+                        console.warn('[RAG pipeline] failed to mark model ready:', e)
+                    }
                     router.replace(`/console/${id}`)
                 } else if (data.status === 'indexing') {
                     // Map progress to steps 1-4 for visual representation
