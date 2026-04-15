@@ -17,3 +17,7 @@ uvicorn==0.34.0
 python-dotenv==1.0.1
 python-multipart==0.0.18
 duckduckgo-search==7.2.1
+supabase==2.28.3
+pytesseract==0.3.13
+Pillow==10.4.0
+PyMuPDF==1.26.0

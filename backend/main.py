@@ -2,31 +2,39 @@
 # This code is for evaluation purposes only. Unauthorized use is prohibited.
 
 import json
+import logging
 import os
 import shutil
+from pathlib import Path
+from typing import List
+
+import llmcore.logger
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import (
-APIRouter,
-BackgroundTasks,
-FastAPI,
-File,
-HTTPException,
-UploadFile,
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pathlib import Path
-from typing import List
+
+from backend.auth import get_current_user
+from backend.routers.models import router as models_router
+from backend.schemas import (
+    ProcessRequest,
+    QueryRequest,
+)
 from llmcore.main import TaskExecutor
 from llmcore.utils.cleanup import cleanup_old_data
-from .schemas import (
-FileData,
-ProcessRequest,
-QueryRequest,
-)
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
 
 class DIQECoreAPI:
     REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -40,13 +48,18 @@ class DIQECoreAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+        self.app.include_router(models_router)
         self._register_routes()
 
-    def _rag_corpus_path(self, model_id: str) -> Path:
-        jsonl = self.REPO_ROOT / "output" / model_id / "rag" / "corpus.jsonl"
+    def _rag_dir(self, user_id: str, model_id: str) -> Path:
+        return self.REPO_ROOT / "output" / user_id / model_id / "rag"
+
+    def _rag_corpus_path(self, user_id: str, model_id: str) -> Path:
+        rag_dir = self._rag_dir(user_id, model_id)
+        jsonl = rag_dir / "corpus.jsonl"
         if jsonl.exists():
             return jsonl
-        return self.REPO_ROOT / "output" / model_id / "rag" / "corpus.json"
+        return rag_dir / "corpus.json"
 
     def _doc_id_from_chunk_id(self, chunk_id: str) -> str:
         if "_" in chunk_id:
@@ -55,13 +68,13 @@ class DIQECoreAPI:
                 return head
         return chunk_id
 
-    def _rag_index_stats(self, model_id: str) -> dict:
-        input_dir = self.REPO_ROOT / "models" / model_id / "input"
+    def _rag_index_stats(self, user_id: str, model_id: str) -> dict:
+        input_dir = self.REPO_ROOT / "models" / user_id / model_id / "input"
         uploaded_file_count = 0
         if input_dir.is_dir():
             uploaded_file_count = sum(1 for p in input_dir.iterdir() if p.is_file())
 
-        corpus_path = self._rag_corpus_path(model_id)
+        corpus_path = self._rag_corpus_path(user_id, model_id)
         total_chunks = 0
         doc_ids: set[str] = set()
         if corpus_path.exists():
@@ -84,7 +97,8 @@ class DIQECoreAPI:
             except (json.JSONDecodeError, OSError, TypeError):
                 pass
 
-        marker = self.REPO_ROOT / "output" / model_id / "rag" / "index_complete.json"
+        rag_dir = self._rag_dir(user_id, model_id)
+        marker = rag_dir / "index_complete.json"
         index_complete = marker.exists()
         if index_complete:
             try:
@@ -108,22 +122,40 @@ class DIQECoreAPI:
             return {"status": "ok", "message": "DIQE Core Service Running"}
 
         @self.app.post("/process")
-        async def process_documents(request: ProcessRequest, background_tasks: BackgroundTasks):
+        async def process_documents(
+            request: ProcessRequest,
+            background_tasks: BackgroundTasks,
+            user_id: str = Depends(get_current_user),
+        ):
             try:
                 input_data = request.model_dump()
-                print(f"Received process request for model: {input_data['model_id']}")
+                input_data["user_id"] = user_id
+                logger.info(
+                    "Process request: model_id=%s user_id=%s",
+                    input_data["model_id"],
+                    user_id,
+                )
                 executor = TaskExecutor(input_data)
                 background_tasks.add_task(executor.setup)
                 return {"status": "success", "message": "Pipeline processing started in background."}
-            except Exception as e:
-                print(f"Error initiating pipeline: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+            except Exception as exc:
+                logger.error("Error initiating pipeline: %s", exc)
+                raise HTTPException(status_code=500, detail=str(exc))
 
         @self.app.post("/query")
-        async def query_documents(request: QueryRequest):
+        async def query_documents(
+            request: QueryRequest,
+            user_id: str = Depends(get_current_user),
+        ):
             try:
-                input_data = {"model_id": request.model_id}
-                print(f"Received query: '{request.query}' ({request.type}) - Lang: {request.language}")
+                input_data = {"model_id": request.model_id, "user_id": user_id}
+                logger.info(
+                    "Query: '%s' (%s) - Lang: %s user_id=%s",
+                    request.query,
+                    request.type,
+                    request.language,
+                    user_id,
+                )
                 executor = TaskExecutor(input_data)
                 return StreamingResponse(
                     executor.stream_query(
@@ -134,16 +166,19 @@ class DIQECoreAPI:
                     ),
                     media_type="text/plain",
                 )
-            except Exception as e:
-                print(f"Error executing query: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+            except Exception as exc:
+                logger.error("Error executing query: %s", exc)
+                raise HTTPException(status_code=500, detail=str(exc))
 
         @self.app.get("/model/{model_id}/sources")
-        async def get_rag_sources(model_id: str):
-            path = self._rag_corpus_path(model_id)
+        async def get_rag_sources(
+            model_id: str,
+            user_id: str = Depends(get_current_user),
+        ):
+            path = self._rag_corpus_path(user_id, model_id)
             if not path.exists():
                 return {"data": []}
-            
+
             out = []
             try:
                 if path.suffix == ".jsonl":
@@ -157,7 +192,8 @@ class DIQECoreAPI:
                                     "id": cid,
                                     "text": text,
                                     "n_tokens": len(text.split()),
-                                    "document_ids": [self._doc_id_from_chunk_id(cid)],
+                                    "document_ids": [row.get("doc_id") or self._doc_id_from_chunk_id(cid)],
+                                    "source": row.get("source") or None,
                                 })
                 else:
                     rows: list = json.loads(path.read_text())
@@ -168,15 +204,19 @@ class DIQECoreAPI:
                             "id": cid,
                             "text": text,
                             "n_tokens": len(text.split()),
-                            "document_ids": [self._doc_id_from_chunk_id(cid)],
+                            "document_ids": [row.get("doc_id") or self._doc_id_from_chunk_id(cid)],
+                            "source": row.get("source") or None,
                         })
             except (json.JSONDecodeError, OSError):
                 return {"data": []}
             return {"data": out}
 
         @self.app.get("/model/{model_id}/graph")
-        async def get_entity_graph(model_id: str):
-            rag_stats = self._rag_index_stats(model_id)
+        async def get_entity_graph(
+            model_id: str,
+            user_id: str = Depends(get_current_user),
+        ):
+            rag_stats = self._rag_index_stats(user_id, model_id)
             return {
                 "data": {
                     "entities": [],
@@ -186,9 +226,12 @@ class DIQECoreAPI:
             }
 
         @self.app.get("/api/status/{model_id}")
-        async def get_processing_status(model_id: str):
+        async def get_processing_status(
+            model_id: str,
+            user_id: str = Depends(get_current_user),
+        ):
             try:
-                rag_dir = self.REPO_ROOT / "output" / model_id / "rag"
+                rag_dir = self.REPO_ROOT / "output" / user_id / model_id / "rag"
                 marker = rag_dir / "index_complete.json"
                 corpus_j = rag_dir / "corpus.json"
                 corpus_l = rag_dir / "corpus.jsonl"
@@ -204,37 +247,64 @@ class DIQECoreAPI:
                 if corpus_j.exists() or corpus_l.exists():
                     return {"status": "indexing", "progress": 70, "message": "Building vector index..."}
 
-                extracted_dir = self.REPO_ROOT / "output" / model_id / "extracted"
+                extracted_dir = self.REPO_ROOT / "output" / user_id / model_id / "extracted"
                 if extracted_dir.exists() and any(extracted_dir.iterdir()):
                     return {"status": "indexing", "progress": 40, "message": "Extracting document text..."}
 
-                models_dir = self.REPO_ROOT / "models" / model_id / "input"
+                models_dir = self.REPO_ROOT / "models" / user_id / model_id / "input"
                 if models_dir.exists() and any(models_dir.iterdir()):
                     return {"status": "construction", "progress": 20, "message": "Documents received, processing..."}
 
                 return {"status": "pending", "progress": 0, "message": "Waiting for pipeline to start..."}
-            except Exception as e:
-                print(f"Error checking status: {e}")
-                return {"status": "error", "message": str(e)}
+            except Exception as exc:
+                logger.error("Error checking status for model %s: %s", model_id, exc)
+                return {"status": "error", "message": str(exc)}
 
         @self.app.post("/upload/{model_id}")
-        async def upload_files(model_id: str, files: List[UploadFile] = File(...)):
+        async def upload_files(
+            model_id: str,
+            files: List[UploadFile] = File(...),
+            user_id: str = Depends(get_current_user),
+        ):
             try:
-                input_dir = f"models/{model_id}/input"
-                os.makedirs(input_dir, exist_ok=True)
+                input_dir = self.REPO_ROOT / "models" / user_id / model_id / "input"
+                input_dir.mkdir(parents=True, exist_ok=True)
 
+                from backend.storage import StorageService
+
+                storage = StorageService(user_id)
                 saved_files = []
-                for file in files:
-                    file_location = f"{input_dir}/{file.filename}"
-                    with open(file_location, "wb") as buffer:
-                        shutil.copyfileobj(file.file, buffer)
-                    saved_files.append({"filename": file.filename, "file_path": os.path.abspath(file_location)})
 
-                print(f"Uploaded {len(saved_files)} files for model {model_id}")
+                for file in files:
+                    content = await file.read()
+
+                    local_path = input_dir / file.filename
+                    local_path.write_bytes(content)
+
+                    try:
+                        storage.upload_file(model_id, "input", file.filename, content)
+                    except Exception as storage_exc:
+                        logger.warning(
+                            "Storage upload failed for %s (local copy kept): %s",
+                            file.filename,
+                            storage_exc,
+                        )
+
+                    saved_files.append({
+                        "filename": file.filename,
+                        "file_path": str(local_path.resolve()),
+                    })
+
+                logger.info(
+                    "Uploaded %d file(s) for model %s (user %s)",
+                    len(saved_files),
+                    model_id,
+                    user_id,
+                )
                 return {"status": "success", "files": saved_files}
-            except Exception as e:
-                print(f"Error uploading files: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+            except Exception as exc:
+                logger.error("Error uploading files: %s", exc)
+                raise HTTPException(status_code=500, detail=str(exc))
 
         @self.app.post("/admin/cleanup")
         async def run_cleanup(hours: int = 24):
@@ -244,11 +314,12 @@ class DIQECoreAPI:
                     "status": "success",
                     "deleted_count": count,
                     "errors": errors,
-                    "message": f"Cleanup finished. Removed {count} old project directories."
+                    "message": f"Cleanup finished. Removed {count} old project directories.",
                 }
-            except Exception as e:
-                print(f"Cleanup failed: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+            except Exception as exc:
+                logger.error("Cleanup failed: %s", exc)
+                raise HTTPException(status_code=500, detail=str(exc))
+
 
 api_instance = DIQECoreAPI()
 app = api_instance.app
