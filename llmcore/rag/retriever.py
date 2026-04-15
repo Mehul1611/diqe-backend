@@ -1,5 +1,6 @@
 import chromadb
 import json
+import logging
 import numpy as np
 import threading
 from chromadb.config import Settings
@@ -8,13 +9,19 @@ from rank_bm25 import BM25Okapi
 from llmcore.constants import ModelConstant, RAGConstants
 from llmcore.models import ModelProvider
 
+logger = logging.getLogger(__name__)
+
 _lock = threading.Lock()
 _cache: dict[str, "HybridRetriever"] = {}
 
+
 class HybridRetriever:
-    def __init__(self, model_id: str):
+    def __init__(self, model_id: str, user_id: str = "default"):
         self.model_id = model_id
-        persist_dir = ModelConstant.PathConstant.RAG_OUTPUT_PATH.format(model_id=model_id)
+        self.user_id = user_id
+        persist_dir = ModelConstant.PathConstant.RAG_OUTPUT_PATH.format(
+            user_id=user_id, model_id=model_id
+        )
         client = chromadb.PersistentClient(
             path=persist_dir,
             settings=Settings(anonymized_telemetry=False),
@@ -31,7 +38,7 @@ class HybridRetriever:
         elif corpus_path_json.exists():
             try:
                 corpus = json.loads(corpus_path_json.read_text())
-            except:
+            except Exception:
                 corpus = []
         self.corpus_ids: list[str] = [c["id"] for c in corpus]
         self.corpus_texts: list[str] = [c["text"] for c in corpus]
@@ -39,14 +46,15 @@ class HybridRetriever:
         self.bm25 = BM25Okapi(tokenized)
 
     @classmethod
-    def get_instance(cls, model_id: str):
+    def get_instance(cls, model_id: str, user_id: str = "default") -> "HybridRetriever":
+        cache_key = f"{user_id}/{model_id}"
         with _lock:
-            if model_id not in _cache:
+            if cache_key not in _cache:
                 if len(_cache) >= 2:
-                    oldest_id = next(iter(_cache))
-                    del _cache[oldest_id]
-                _cache[model_id] = cls(model_id)
-            return _cache[model_id]
+                    oldest_key = next(iter(_cache))
+                    del _cache[oldest_key]
+                _cache[cache_key] = cls(model_id, user_id)
+            return _cache[cache_key]
 
     def retrieve(self, query: str) -> list[str]:
         chunks, _ = self.retrieve_with_scores(query)

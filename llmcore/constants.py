@@ -1,11 +1,11 @@
 import os
 
+
 class ModelConstant:
     class PathConstant:
-        OUTPUT_PATH = "output/{model_id}/"
-        INPUT_FOLDER = "models/{model_id}/input"
-        EXTRACTED_FOLDER = os.path.join(OUTPUT_PATH, "extracted")
-        RAG_OUTPUT_PATH = os.path.join(OUTPUT_PATH, "rag")
+        OUTPUT_PATH = "output/{user_id}/{model_id}/"
+        INPUT_FOLDER = "models/{user_id}/{model_id}/input"
+        RAG_OUTPUT_PATH = "output/{user_id}/{model_id}/rag"
 
 
 class RAGConstants:
