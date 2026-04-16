@@ -33,7 +33,13 @@ class TaskExecutor:
 
         logger.info("Setup finished successfully for model_id=%s", self.input_data.get("model_id"))
 
-    async def query(self, query: str, language: str = "English", mode: str = "fast"):
+    async def query(
+        self,
+        query: str,
+        search_type: str = "local",
+        language: str = "English",
+        mode: str = "fast",
+    ):
         logger.info("Invoking RAG pipeline for: '%s' (Mode: %s)", query, mode)
         pipeline = RAGPipeline(
             model_id=self.input_data["model_id"],
@@ -41,14 +47,20 @@ class TaskExecutor:
             language=language,
             mode=mode,
         )
-        return await pipeline.execute(query, search_type="local")
+        return await pipeline.execute(query, search_type=search_type)
 
-    async def stream_query(self, query: str, type: str = "local", language: str = "English", mode: str = "fast"):
+    async def stream_query(
+        self,
+        query: str,
+        search_type: str = "local",
+        language: str = "English",
+        mode: str = "fast",
+    ):
         pipeline = RAGPipeline(
             model_id=self.input_data["model_id"],
             user_id=self.input_data.get("user_id", "default"),
             language=language,
             mode=mode,
         )
-        async for chunk in pipeline.stream(query, search_type=type):
+        async for chunk in pipeline.stream(query, search_type=search_type):
             yield chunk

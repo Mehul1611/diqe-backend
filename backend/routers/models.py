@@ -4,18 +4,14 @@ import shutil
 from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client, create_client
-
 from backend.auth import get_current_user
 from backend.schemas import ModelCardCreate, ModelCardResponse, ModelCardUpdate
 from backend.storage import StorageService
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/user/models", tags=["models"])
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 

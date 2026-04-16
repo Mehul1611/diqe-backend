@@ -9,7 +9,7 @@ interface AuthContextValue {
     session: Session | null
     loading: boolean
     signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>
-    signUp: (email: string, password: string) => Promise<{ error: AuthError | null }>
+    signUp: (email: string, password: string) => Promise<{ error: AuthError | null; session: Session | null }>
     signOut: () => Promise<void>
 }
 
@@ -47,14 +47,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const signUp = async (email: string, password: string) => {
-        if (!supabase) return { error: { message: 'Supabase not configured.' } as AuthError }
-        const { error } = await supabase.auth.signUp({ email, password })
-        return { error }
+        if (!supabase) {
+            return { error: { message: 'Supabase not configured.' } as AuthError, session: null }
+        }
+        const { data, error } = await supabase.auth.signUp({ email, password })
+        return { error, session: data.session ?? null }
     }
 
     const signOut = async () => {
         if (!supabase) return
-        await supabase.auth.signOut()
+        setSession(null)
+        setUser(null)
+        await supabase.auth.signOut({ scope: 'global' })
     }
 
     return (

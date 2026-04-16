@@ -4,13 +4,10 @@ import os
 import threading
 import uuid
 from pathlib import Path
-
 import chromadb
 from chromadb.config import Settings
 from fastembed import TextEmbedding
-
 from llmcore.constants import RAGConstants
-
 from .base import RetrievedChunk
 
 _lock = threading.Lock()

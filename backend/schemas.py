@@ -1,6 +1,5 @@
 from typing import List, Optional
-
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class ChatMessage(BaseModel):
@@ -25,7 +24,10 @@ class QueryRequest(BaseModel):
     model_id: str
     user_id: str
     query: str
-    type: str = "local"
+    search_type: str = Field(
+        default="local",
+        validation_alias=AliasChoices("type", "search_type"),
+    )
     language: str = "English"
     mode: str = "fast"
     chat_history: List[ChatMessage] = Field(default_factory=list)

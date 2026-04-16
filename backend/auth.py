@@ -6,7 +6,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
-
 _bearer = HTTPBearer()
 
 

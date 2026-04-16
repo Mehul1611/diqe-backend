@@ -4,7 +4,6 @@ from functools import lru_cache
 from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
-
 BUCKET = "diqe-models"
 
 

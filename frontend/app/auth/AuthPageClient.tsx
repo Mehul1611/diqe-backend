@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, Loader2, Mail } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import NetworkCanvas from '@/components/NetworkCanvas'
 
@@ -16,7 +16,7 @@ export default function AuthPageClient() {
     const initialTab = params.get('tab') === 'signup' ? 'signup' : 'signin'
     const [tab, setTab] = useState<Tab>(initialTab)
 
-    const { signIn, signUp } = useAuth()
+    const { signIn, signUp, user, loading: authLoading } = useAuth()
 
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
@@ -24,16 +24,33 @@ export default function AuthPageClient() {
     const [showPassword, setShowPassword] = useState(false)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    /** Briefly mark fields read-only so browsers do not inject another profile’s saved password/email before focus. */
+    const [autofillGuard, setAutofillGuard] = useState(true)
+    /** After sign-up when email confirmation is required (no session yet). */
+    const [pendingConfirmEmail, setPendingConfirmEmail] = useState<string | null>(null)
 
     const title = useMemo(() => (tab === 'signin' ? 'Sign in' : 'Create account'), [tab])
 
-    useEffect(() => {
+    const clearCredentials = useCallback(() => {
         setEmail('')
         setPassword('')
         setConfirm('')
         setError(null)
         setShowPassword(false)
-    }, [tab])
+        setPendingConfirmEmail(null)
+    }, [])
+
+    useEffect(() => {
+        if (authLoading) return
+        if (user) {
+            router.replace('/dashboard')
+        }
+    }, [user, authLoading, router])
+
+    useEffect(() => {
+        clearCredentials()
+        setAutofillGuard(true)
+    }, [tab, clearCredentials])
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -52,19 +69,49 @@ export default function AuthPageClient() {
                     setLoading(false)
                     return
                 }
-                const { error } = await signUp(email, password)
+                const signupEmail = email.trim()
+                const { error, session } = await signUp(signupEmail, password)
                 if (error) { setError(error.message); setLoading(false); return }
+                setPassword('')
+                setConfirm('')
+                setLoading(false)
+                if (!session) {
+                    setPendingConfirmEmail(signupEmail)
+                    setEmail('')
+                    return
+                }
+                clearCredentials()
                 router.replace('/dashboard')
                 return
             }
 
             const { error } = await signIn(email, password)
             if (error) { setError(error.message); setLoading(false); return }
+            clearCredentials()
+            setLoading(false)
             router.replace('/dashboard')
         } catch (err: any) {
             setError(err?.message ?? 'Something went wrong.')
             setLoading(false)
         }
+    }
+
+    if (authLoading) {
+        return (
+            <main className="relative flex min-h-screen items-center justify-center bg-slate-950">
+                <Loader2 className="h-8 w-8 animate-spin text-emerald-500" aria-hidden />
+                <span className="sr-only">Checking session…</span>
+            </main>
+        )
+    }
+
+    if (user) {
+        return (
+            <main className="relative flex min-h-screen items-center justify-center bg-slate-950">
+                <Loader2 className="h-8 w-8 animate-spin text-emerald-500" aria-hidden />
+                <span className="sr-only">Redirecting…</span>
+            </main>
+        )
     }
 
     return (
@@ -89,33 +136,66 @@ export default function AuthPageClient() {
                         </span>
                     </Link>
 
-                    <div className="flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-900/60 p-1">
-                        <button
-                            type="button"
-                            onClick={() => setTab('signin')}
-                            className={
-                                tab === 'signin'
-                                    ? 'rounded-full bg-emerald-500/15 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-emerald-300 transition-all'
-                                    : 'rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-slate-500 transition-all'
-                            }
-                        >
-                            Sign in
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setTab('signup')}
-                            className={
-                                tab === 'signup'
-                                    ? 'rounded-full bg-emerald-500/15 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-emerald-300 transition-all'
-                                    : 'rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-slate-500 blur-[1.5px] opacity-60 hover:blur-0 hover:opacity-100 transition-all'
-                            }
-                        >
-                            Sign up
-                        </button>
-                    </div>
+                    {!pendingConfirmEmail && (
+                        <div className="flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-900/60 p-1">
+                            <button
+                                type="button"
+                                onClick={() => setTab('signin')}
+                                className={
+                                    tab === 'signin'
+                                        ? 'rounded-full bg-emerald-500/15 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-emerald-300 transition-all'
+                                        : 'rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-slate-500 transition-all'
+                                }
+                            >
+                                Sign in
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setTab('signup')}
+                                className={
+                                    tab === 'signup'
+                                        ? 'rounded-full bg-emerald-500/15 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-emerald-300 transition-all'
+                                        : 'rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-slate-500 blur-[1.5px] opacity-60 hover:blur-0 hover:opacity-100 transition-all'
+                                }
+                            >
+                                Sign up
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="rounded-2xl border border-slate-700/60 bg-slate-900/70 p-8 shadow-2xl backdrop-blur-xl">
+                    {pendingConfirmEmail ? (
+                        <div className="text-center">
+                            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10">
+                                <Mail className="h-7 w-7 text-emerald-400" aria-hidden />
+                            </div>
+                            <h1 className="mb-2 text-2xl font-bold tracking-tight text-white">Confirm your email</h1>
+                            <p className="mb-4 text-sm leading-relaxed text-slate-300">
+                                Thanks for signing up. We sent a confirmation link to the address below. Open that email
+                                and click the link to verify your account, then come back here to sign in.
+                            </p>
+                            <p className="mb-6 rounded-xl border border-slate-700/60 bg-slate-800/50 px-4 py-3 font-mono text-sm text-emerald-200/90 break-all">
+                                {pendingConfirmEmail}
+                            </p>
+                            <p className="mb-6 text-xs text-slate-500">
+                                Did not receive it? Check your spam or promotions folder. The sender should be from your
+                                project’s auth provider (e.g. Supabase).
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPendingConfirmEmail(null)
+                                    setTab('signin')
+                                    router.replace('/auth?tab=signin')
+                                }}
+                                className="w-full rounded-full border border-emerald-400/40 bg-gradient-to-br from-emerald-500 to-emerald-600 px-6 py-3 text-sm font-bold uppercase tracking-widest text-white shadow-[0_8px_20px_-4px_rgba(16,185,129,0.35)] transition hover:from-emerald-400 hover:to-emerald-500"
+                            >
+                                Continue to sign in
+                            </button>
+                        </div>
+                    ) : (
+                        <>
                     <h1 className="mb-1 text-2xl font-bold tracking-tight text-white">{title}</h1>
                     <p className="mb-8 text-sm text-slate-400">
                         {tab === 'signin'
@@ -123,14 +203,24 @@ export default function AuthPageClient() {
                             : 'Create an account to start building model cards.'}
                     </p>
 
-                    <form onSubmit={submit} autoComplete="off" className="space-y-5">
+                    <form
+                        onSubmit={submit}
+                        autoComplete="off"
+                        className="space-y-5"
+                    >
                         <div className="space-y-1.5">
                             <label className="block text-xs font-semibold uppercase tracking-widest text-slate-400">
                                 Email
                             </label>
                             <input
                                 type="email"
-                                autoComplete="new-password"
+                                name="diqe-auth-email"
+                                autoComplete={tab === 'signin' ? 'username' : 'email'}
+                                autoCorrect="off"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                                readOnly={autofillGuard}
+                                onFocus={() => setAutofillGuard(false)}
                                 required
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
@@ -146,7 +236,10 @@ export default function AuthPageClient() {
                             <div className="relative">
                                 <input
                                     type={showPassword ? 'text' : 'password'}
-                                    autoComplete="off"
+                                    name="diqe-auth-password"
+                                    autoComplete={tab === 'signin' ? 'current-password' : 'new-password'}
+                                    readOnly={autofillGuard}
+                                    onFocus={() => setAutofillGuard(false)}
                                     required
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
@@ -177,7 +270,10 @@ export default function AuthPageClient() {
                                     </label>
                                     <input
                                         type={showPassword ? 'text' : 'password'}
-                                        autoComplete="off"
+                                        name="diqe-auth-password-confirm"
+                                        autoComplete="new-password"
+                                        readOnly={autofillGuard}
+                                        onFocus={() => setAutofillGuard(false)}
                                         required={tab === 'signup'}
                                         value={confirm}
                                         onChange={(e) => setConfirm(e.target.value)}
@@ -227,6 +323,8 @@ export default function AuthPageClient() {
                             )}
                         </button>
                     </form>
+                        </>
+                    )}
                 </div>
             </motion.div>
         </main>
