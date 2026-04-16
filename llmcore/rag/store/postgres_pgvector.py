@@ -1,12 +1,8 @@
 from __future__ import annotations
-
 import threading
-
 from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_postgres import PGEngine, PGVectorStore
-
 from llmcore.constants import RAGConstants, VectorDBConstants
-
 from .base import RetrievedChunk
 
 _lock = threading.Lock()
@@ -42,10 +38,20 @@ class PostgresPGVectorStore:
                 _cache[model_id] = cls(model_id)
         return _cache[model_id]
 
-    async def add_texts(self, texts: list[str], metadatas: list[dict], ids: list[str]) -> None:
+    async def add_texts(
+        self,
+        texts: list[str],
+        metadatas: list[dict],
+        ids: list[str],
+    ) -> None:
         await self.store.aadd_texts(texts=texts, metadatas=metadatas, ids=ids)
 
-    async def similarity_search(self, query: str, k: int, metadata_filter: dict | None = None) -> list[RetrievedChunk]:
+    async def similarity_search(
+        self, 
+        query: str,
+        k: int, 
+        metadata_filter: dict | None = None
+    ) -> list[RetrievedChunk]:
         docs = await self.store.asimilarity_search(query=query, k=k, filter=metadata_filter)
         return [
             RetrievedChunk(id=(d.id or ""), text=d.page_content, metadata=d.metadata or {})
@@ -53,7 +59,10 @@ class PostgresPGVectorStore:
         ]
 
     async def similarity_search_with_scores(
-        self, query: str, k: int, metadata_filter: dict | None = None
+        self, 
+        query: str, 
+        k: int, 
+        metadata_filter: dict | None = None
     ) -> list[RetrievedChunk]:
         docs = await self.store.asimilarity_search_with_score(query=query, k=k, filter=metadata_filter)
         return [

@@ -18,7 +18,6 @@ def configure_logging() -> None:
     date_fmt = "%Y-%m-%d %H:%M:%S"
 
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
-    # Default to stdout-only; enable file logging by setting DIQE_FILE_LOGS=1.
     if str(os.environ.get("DIQE_FILE_LOGS", "")).strip() in ("1", "true", "True"):
         handlers.append(logging.FileHandler(str(log_file), encoding="utf-8"))
 

@@ -446,7 +446,11 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-3">
                     <span className="hidden text-sm text-slate-400 sm:block">{user?.email}</span>
                     <button
-                        onClick={signOut}
+                        type="button"
+                        onClick={async () => {
+                            await signOut()
+                            router.replace('/auth?tab=signin')
+                        }}
                         className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-600 hover:text-white"
                     >
                         <LogOut className="h-3.5 w-3.5" /> Sign out

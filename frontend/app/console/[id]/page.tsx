@@ -414,24 +414,40 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                     </span>
                 </button>
 
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex items-center justify-between gap-2">
                     <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Chats</span>
-                    <button
-                        type="button"
-                        onClick={() => deleteAllSessions()}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-500/10 hover:text-red-300"
-                        title="Delete all chats"
-                        aria-label="Delete all chats"
-                    >
-                        <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setView('console')
+                                setMessages([])
+                                if (!tempChat) void createNewSession()
+                            }}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-slate-400 transition hover:bg-emerald-500/10 hover:text-emerald-300"
+                            title="New chat"
+                            aria-label="New chat"
+                        >
+                            <Plus className="h-4 w-4" />
+                            <span className="hidden text-[10px] font-bold uppercase tracking-wider sm:inline">New</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => deleteAllSessions()}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-500/10 hover:text-red-300"
+                            title="Delete all chats"
+                            aria-label="Delete all chats"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-800/70 bg-slate-950/20 p-2">
                     {loadingSessions ? (
                         <div className="px-2 py-3 text-xs text-slate-500">Loading chats…</div>
                     ) : sessions.length === 0 ? (
-                        <div className="px-2 py-3 text-xs text-slate-500">No chats yet. Click “New”.</div>
+                        <div className="px-2 py-3 text-xs text-slate-500">No chats yet. Use <span className="font-semibold text-slate-400">New</span> above.</div>
                     ) : (
                         <div className="space-y-1">
                             {sessions.map((s) => (
@@ -507,9 +523,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                             <p className="truncate text-sm font-bold text-white">
                                 {modelCard?.name ?? 'Loading…'}
                             </p>
-                            {modelCard?.description && (
-                                <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{modelCard.description}</p>
-                            )}
                         </div>
                         <span className="shrink-0 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-300">
                             {modelCard?.doc_count ?? 0} docs

@@ -1,7 +1,5 @@
 import logging
 import sys
-
-import llmcore.logger
 from llmcore.utils.cleanup import cleanup_old_data
 
 logger = logging.getLogger(__name__)
