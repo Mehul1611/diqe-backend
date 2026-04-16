@@ -1,9 +1,15 @@
 import asyncio
 import csv
+import logging
 import os
+import pytesseract
+import fitz
+from PIL import Image
 from docx import Document
 from pptx import Presentation
 from pypdf import PdfReader
+
+logger = logging.getLogger(__name__)
 
 
 class DataLoader:
@@ -27,88 +33,48 @@ class DataLoader:
         doc = Document(path)
         return "\n".join(p.text for p in doc.paragraphs)
 
-    @staticmethod
-    def _best_page_text(pypdf_page: str, pymupdf_page: str) -> str:
-        """Prefer the engine that returned more usable text (pypdf often keeps only headers)."""
-        a = (pypdf_page or "").strip()
-        b = (pymupdf_page or "").strip()
-        if len(b) > len(a):
-            return pymupdf_page or pypdf_page
-        return pypdf_page or pymupdf_page
-
-    def _read_pdf_pages_pymupdf(self, path: str) -> list[str]:
-        import pymupdf
-
-        doc = pymupdf.open(path)
-        try:
-            out: list[str] = []
-            for page in doc:
-                plain = page.get_text(sort=True) or ""
-                if len(plain.strip()) >= 80:
-                    out.append(plain)
-                    continue
-                blocks = page.get_text("blocks") or []
-                merged = "\n".join(
-                    str(b[4]).strip()
-                    for b in blocks
-                    if len(b) > 4 and str(b[4]).strip()
-                )
-                out.append(merged if len(merged) > len(plain.strip()) else plain)
-            return out
-        finally:
-            doc.close()
-
-    def _read_pdf_pages_pypdf(self, path: str) -> list[str]:
-        pages: list[str] = []
-        with open(path, "rb") as fp:
-            reader = PdfReader(fp)
-            for page in reader.pages:
-                raw = ""
-                try:
-                    raw = page.extract_text(extraction_mode="layout") or ""
-                except (TypeError, ValueError):
-                    pass
-                if not (raw or "").strip():
-                    raw = page.extract_text() or ""
-                pages.append(raw)
-        return pages
-
-    def _read_pdf_structured(self, path: str) -> dict:
-        pages_py = self._read_pdf_pages_pypdf(path)
-
-        pages_mu: list[str] | None = None
-        try:
-            import pymupdf  # noqa: F401
-
-            pages_mu = self._read_pdf_pages_pymupdf(path)
-        except ImportError:
-            pass
-        except Exception as e:
-            print(f"PyMuPDF extraction failed for {path}: {e}")
-
-        if pages_mu is None:
-            pages = pages_py
-        else:
-            n = max(len(pages_py), len(pages_mu))
-            pages = [
-                self._best_page_text(
-                    pages_py[i] if i < len(pages_py) else "",
-                    pages_mu[i] if i < len(pages_mu) else "",
-                )
-                for i in range(n)
-            ]
-
-        parts = [(p or "").strip() for p in pages if (p or "").strip()]
-        text = "\n\n".join(parts)
-        if os.path.getsize(path) > 150_000 and len(text) < 500:
-            print(
-                f"[PDF] Only {len(text)} characters extracted from a large file ({path}). "
-                "Body text may be inside images — OCR (e.g. Tesseract) would be needed for full content."
-            )
-        return {"text": text, "pages": pages}
-
     def _read_pdf(self, path: str) -> str:
-        return self._read_pdf_structured(path)["text"]
+        with open(path, "rb") as pdf:
+            reader = PdfReader(pdf)
+            text = "".join(page.extract_text() or "" for page in reader.pages)
+
+        if len(text.strip()) < 20:
+            ocr_text = self._ocr_pdf(path)
+            if ocr_text.strip():
+                return ocr_text
+        return text
+
+    def _ocr_image_path(self, path: str) -> str:
+        if not pytesseract or not Image:
+            logger.warning("OCR dependencies not installed; skipping OCR for %s", path)
+            return ""
+        try:
+            img = Image.open(path)
+            return pytesseract.image_to_string(img) or ""
+        except Exception as exc:
+            logger.warning("OCR failed for image %s: %s", path, exc)
+            return ""
+
+    def _ocr_pdf(self, path: str) -> str:
+        if not fitz:
+            logger.warning("PyMuPDF not installed; skipping PDF OCR for %s", path)
+            return ""
+        if not pytesseract or not Image:
+            logger.warning("OCR dependencies not installed; skipping PDF OCR for %s", path)
+            return ""
+
+        out_parts: list[str] = []
+        try:
+            doc = fitz.open(path)
+            for page in doc:
+                pix = page.get_pixmap(dpi=200)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                out_parts.append(pytesseract.image_to_string(img) or "")
+            doc.close()
+        except Exception as exc:
+            logger.warning("PDF OCR failed for %s: %s", path, exc)
+            return ""
+        return "\n".join(p for p in out_parts if p.strip())
 
     def _read_ppt(self, path: str) -> str:
         pres = Presentation(path)
@@ -132,28 +98,23 @@ class DataLoader:
             ".pptx": self._read_ppt,
             ".txt": self._read_txt,
             ".md": self._read_txt,
+            ".png": self._ocr_image_path,
+            ".jpg": self._ocr_image_path,
+            ".jpeg": self._ocr_image_path,
+            ".webp": self._ocr_image_path,
         }.get(extension)
 
     def _extract_file_sync(self, item: dict) -> dict | None:
         file_path = item.get("file_path", "")
         if not os.path.exists(file_path):
-            print(f"File not found: {file_path}")
+            logger.warning("File not found: %s", file_path)
             return None
 
         extension = os.path.splitext(file_path)[1].lower()
         handler = self._get_file_handler(extension)
         if not handler:
-            print(f"Unsupported file type: {file_path}")
+            logger.warning("Unsupported file type: %s", file_path)
             return None
-
-        if extension == ".pdf":
-            structured = self._read_pdf_structured(file_path)
-            return {
-                "doc_id": item.get("doc_id", os.path.basename(file_path)),
-                "title": item.get("title", os.path.basename(file_path)),
-                "text": structured["text"],
-                "pages": structured["pages"],
-            }
 
         text = handler(file_path)
         return {
@@ -166,30 +127,16 @@ class DataLoader:
         try:
             return await asyncio.to_thread(self._extract_file_sync, item)
         except Exception as e:
-            print(f"Failed to process {item.get('file_path')}: {e}")
+            logger.error("Failed to process %s: %s", item.get("file_path"), e)
             return None
 
     async def extract_data(self):
-        items = self.input_data.get("files_data", [])
-        print(f"Starting parallel text extraction for {len(items)} file(s)...")
-        results = await asyncio.gather(
-            *[self._extract_file(item) for item in items],
-            return_exceptions=True,
-        )
-        for item, result in zip(items, results):
-            if isinstance(result, Exception):
-                print(f"Error processing {item.get('file_path')}: {result}")
-            elif result:
-                pages = result.get("pages")
-                if isinstance(pages, list) and pages:
-                    body = "\n".join((p or "").strip() for p in pages if (p or "").strip())
-                else:
-                    body = (result.get("text") or "").strip()
-                if not body:
-                    print(
-                        f"No extractable text from {item.get('file_path')} — "
-                        "often image-only (scanned) PDFs; OCR would be required."
-                    )
-                    continue
-                yield result
-        print("Extraction finished.")
+        logger.info("Starting streaming text extraction for model_id=%s", self.model_id)
+        for item in self.input_data.get("files_data", []):
+            try:
+                doc = await self._extract_file(item)
+                if doc:
+                    yield doc
+            except Exception as e:
+                logger.error("Error processing %s: %s", item.get("file_path"), e)
+        logger.info("Extraction finished for model_id=%s", self.model_id)

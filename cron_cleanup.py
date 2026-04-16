@@ -1,6 +1,10 @@
-import os
+import logging
 import sys
+
+import llmcore.logger
 from llmcore.utils.cleanup import cleanup_old_data
+
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     retention_hours = 24
@@ -8,14 +12,14 @@ if __name__ == "__main__":
         try:
             retention_hours = int(sys.argv[1])
         except ValueError:
-            print(f"Invalid retention hours: {sys.argv[1]}. Using default 24.")
+            logger.warning("Invalid retention hours: %s. Using default 24.", sys.argv[1])
 
-    print(f"Executing scheduled cleanup task...")
+    logger.info("Executing scheduled cleanup task (retention=%d h)...", retention_hours)
     count, errors = cleanup_old_data(retention_hours=retention_hours)
-    
+
     if errors:
-        print(f"Cleanup finished with {len(errors)} errors.")
+        logger.error("Cleanup finished with %d error(s).", len(errors))
         for err in errors:
-            print(f" - {err}")
+            logger.error("  - %s", err)
     else:
-        print(f"Cleanup completed successfully. {count} items removed.")
+        logger.info("Cleanup completed successfully. %d local cache dir(s) removed.", count)

@@ -2,16 +2,16 @@ import logging
 import re
 import threading
 from duckduckgo_search import DDGS
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 from llmcore.constants import LLMConstants, RAGConstants
 from llmcore.rag.prompts import (
-GLOBAL_PROMPT,
-RAG_ASSISTANT_PROMPT,
-TRIVIAL_CHAT_PROMPT,
-WEB_PROMPT,
+    GLOBAL_PROMPT,
+    RAG_ASSISTANT_PROMPT,
+    TRIVIAL_CHAT_PROMPT,
+    WEB_PROMPT,
 )
-from llmcore.rag.retriever import VectorDBSearch
+from llmcore.rag.retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +26,9 @@ _TRIVIAL_EXACT = frozenset(
     }
 )
 
-_MAX_HISTORY_MESSAGES = 24
-
 
 class RAGPipeline:
     def _get_fast_trivial_llm(self) -> ChatGroq:
-        """Small fast model + low max_tokens for greetings (skips thinking model & retrieval)."""
         global _fast_trivial_llm
         with _fast_trivial_lock:
             if _fast_trivial_llm is None:
@@ -84,8 +81,9 @@ class RAGPipeline:
                 lines.append(title)
         return "\n".join(lines)
 
-    def __init__(self, model_id: str, language: str = "English", mode: str = "fast"):
+    def __init__(self, model_id: str, user_id: str = "default", language: str = "English", mode: str = "fast"):
         self.model_id = model_id
+        self.user_id = user_id
         self.language = language
         self.mode = mode
         self.llm = self._build_llm()
@@ -118,31 +116,8 @@ class RAGPipeline:
             return True
         return False
 
-    @staticmethod
-    def _history_to_messages(chat_history: list[dict] | None) -> list[HumanMessage | AIMessage]:
-        if not chat_history:
-            return []
-        out: list[HumanMessage | AIMessage] = []
-        for m in chat_history[-_MAX_HISTORY_MESSAGES:]:
-            role = (m.get("role") or "").strip().lower()
-            content = (m.get("content") or "").strip()
-            if not content:
-                continue
-            if role == "user":
-                out.append(HumanMessage(content=content))
-            elif role == "assistant":
-                out.append(AIMessage(content=content))
-        return out
-
-    async def stream(
-        self,
-        query: str,
-        search_type: str = "local",
-        chat_history: list[dict] | None = None,
-    ):
-        history_msgs = self._history_to_messages(chat_history)
-
-        if self._is_trivial_greeting(query) and not history_msgs:
+    async def stream(self, query: str, search_type: str = "local"):
+        if self._is_trivial_greeting(query):
             llm = self._get_fast_trivial_llm()
             messages = [
                 SystemMessage(
@@ -160,7 +135,6 @@ class RAGPipeline:
             if snippets.strip():
                 messages = [
                     SystemMessage(content=WEB_PROMPT.format(language=self.language)),
-                    *history_msgs,
                     HumanMessage(
                         content=f"Notes:\n{snippets}\n\nQuestion: {query}"
                     ),
@@ -168,7 +142,6 @@ class RAGPipeline:
             else:
                 messages = [
                     SystemMessage(content=GLOBAL_PROMPT.format(language=self.language)),
-                    *history_msgs,
                     HumanMessage(content=query),
                 ]
             async for token in self.llm.astream(messages):
@@ -176,20 +149,18 @@ class RAGPipeline:
                     yield token.content
             return
 
-        retriever = VectorDBSearch.get_instance(self.model_id)
-        chunks, top_score = await retriever.retrieve_with_scores(query)
+        retriever = HybridRetriever.get_instance(self.model_id, self.user_id)
+        chunks, top_score = retriever.retrieve_with_scores(query)
 
         if self._should_skip_local_excerpts(chunks, top_score):
             messages = [
                 SystemMessage(content=GLOBAL_PROMPT.format(language=self.language)),
-                *history_msgs,
                 HumanMessage(content=query),
             ]
         else:
             block = self._build_excerpt_block(chunks)
             messages = [
                 SystemMessage(content=RAG_ASSISTANT_PROMPT.format(language=self.language)),
-                *history_msgs,
                 HumanMessage(content=f"Information:\n{block}\n\nQuestion: {query}"),
             ]
 
@@ -197,10 +168,8 @@ class RAGPipeline:
             if token.content:
                 yield token.content
 
-    async def execute(
-        self, query: str, search_type: str = "local", chat_history: list[dict] | None = None
-    ) -> str:
+    async def execute(self, query: str, search_type: str = "local") -> str:
         result = ""
-        async for chunk in self.stream(query, search_type, chat_history=chat_history):
+        async for chunk in self.stream(query, search_type):
             result += chunk
         return result
