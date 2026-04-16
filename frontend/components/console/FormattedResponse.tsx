@@ -10,6 +10,61 @@ import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
 
+/** Turn common LaTeX-style math into plain text / Unicode (models often emit this; react-markdown does not render TeX). */
+function simplifyLatexLikeMath(content: string): string {
+  const hasLatexCmd = (s: string) => /\\[a-zA-Z]+/.test(s)
+
+  const transformFragment = (fragment: string): string => {
+    let t = fragment
+    for (let pass = 0; pass < 24; pass++) {
+      const next = t
+        .replace(/\\text\{([^}]*)\}/g, '$1')
+        .replace(/\\mathrm\{([^}]*)\}/g, '$1')
+        .replace(/\\mathbf\{([^}]*)\}/g, '$1')
+        .replace(/\\mathit\{([^}]*)\}/g, '$1')
+        .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1 / $2)')
+        .replace(/\\times/g, '×')
+        .replace(/\\div/g, '÷')
+        .replace(/\\cdot/g, '·')
+        .replace(/\\pm/g, '±')
+        .replace(/\\leq/g, '≤')
+        .replace(/\\geq/g, '≥')
+        .replace(/\\neq/g, '≠')
+        .replace(/\\approx/g, '≈')
+        .replace(/\\infty/g, '∞')
+        .replace(/\\sum/g, 'Σ')
+        .replace(/\\sqrt\{([^}]*)\}/g, '√($1)')
+        .replace(/\\left\s*/g, '')
+        .replace(/\\right\s*/g, '')
+        .replace(/\\,/g, ' ')
+        .replace(/\\;/g, ' ')
+        .replace(/\\quad/g, '  ')
+        .replace(/\\\(/g, '')
+        .replace(/\\\)/g, '')
+      if (next === t) break
+      t = next
+    }
+    return t
+      .replace(/\\%/g, '%')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  let s = content
+  // \[ ... \] display math
+  s = s.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (_, inner: string) => transformFragment(inner))
+  // $$ ... $$
+  s = s.replace(/\$\$\s*([\s\S]*?)\s*\$\$/g, (_, inner: string) => transformFragment(inner))
+  // Bracket display (e.g. "[ \\text{...} = \\frac{a}{b} ... ]") — skip normal markdown links like [label](url)
+  s = s.replace(/\[\s*([\s\S]*?)\s*\](?!\()/g, (full, inner: string) => {
+    if (!hasLatexCmd(inner)) return full
+    return transformFragment(inner)
+  })
+  // Remaining \frac, \text, etc. mid-paragraph
+  if (hasLatexCmd(s)) s = transformFragment(s)
+  return s
+}
+
 function maybeBoostPlainText(content: string): string {
   const t = content.trim()
   if (!t || t.length < 280) return content
@@ -193,7 +248,8 @@ type FormattedResponseProps = {
 }
 
 export function FormattedResponse({ content, preprocess = true }: FormattedResponseProps) {
-  const raw = preprocess ? maybeBoostPlainText(content) : content
+  const latexStripped = simplifyLatexLikeMath(content)
+  const raw = preprocess ? maybeBoostPlainText(latexStripped) : latexStripped
   const [copiedAll, setCopiedAll] = useState(false)
 
   const copyAll = useCallback(async () => {
