@@ -18,14 +18,23 @@ class RAGStoreConstants:
 
 class RAGConstants:
     EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+    RERANKER_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
     EMBEDDING_DIMS = 384
     INDEX_BATCH_SIZE = 32
     CHUNK_SIZE = 512
     CHUNK_OVERLAP = 100
     RETRIEVAL_TOP_K = 10
     RERANK_TOP_K = 5
-    LOCAL_RETRIEVAL_FALLBACK_THRESHOLD = None
     WEB_SEARCH_MAX_RESULTS = 8
+    WEB_QUERY_CHAR_LIMIT = 200
+
+
+class GenerationConstants:
+    FAST_MAX_TOKENS = 2048
+    FAST_RAG_TEMPERATURE = 0.0
+    FAST_WEB_TEMPERATURE = 0.2
+    THINKING_MAX_TOKENS = 4096
+    THINKING_TEMPERATURE = 0.8
 
 
 class LLMConstants:
