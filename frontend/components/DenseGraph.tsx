@@ -95,8 +95,9 @@ export default function DenseGraph() {
             filter="url(#nodeGlow)"
             initial={{ scale: 0 }}
             whileInView={{ scale: 1 }}
-            whileHover={{ scale: 1.3, fill: "#4ade80" }}
-            transition={{ duration: 0.4, delay: i * 0.04 }}
+            whileHover={{ scale: 1.4, fill: "#ffffff" }}
+            transition={{ duration: 0.25, delay: i * 0.04 }}
+            style={{ cursor: 'pointer' }}
           />
         ))}
 
