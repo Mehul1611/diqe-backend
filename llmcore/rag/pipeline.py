@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import threading
@@ -199,6 +200,8 @@ class RAGPipeline:
         return False
 
     async def stream(self, query: str, search_type: str = "local"):
+        yield " "
+
         if self._is_trivial_greeting(query):
             llm = self._get_fast_trivial_llm()
             messages = [
@@ -211,7 +214,16 @@ class RAGPipeline:
             return
 
         if search_type == "global":
-            snippets = self._fetch_web_snippets(query)
+            snippets_task = asyncio.create_task(
+                asyncio.to_thread(self._fetch_web_snippets, query)
+            )
+            while not snippets_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(snippets_task), timeout=2.0)
+                except asyncio.TimeoutError:
+                    yield " "
+            snippets = snippets_task.result()
+
             web_llm = self._build_web_llm() if snippets.strip() else self.llm
             if snippets.strip():
                 messages = [

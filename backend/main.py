@@ -167,7 +167,12 @@ class DIQECoreAPI:
                     language=request.language,
                     mode=request.mode,
                 ),
-                media_type="text/plain",
+                media_type="text/plain; charset=utf-8",
+                headers={
+                    "Cache-Control": "no-cache, no-transform",
+                    "X-Accel-Buffering": "no",
+                    "Connection": "keep-alive",
+                },
             )
         except Exception as exc:
             logger.error("Error executing query: %s", exc)
