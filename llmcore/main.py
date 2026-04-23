@@ -2,8 +2,6 @@
 # This code is for evaluation purposes only. Unauthorized use is prohibited.
 
 import logging
-import llmcore.logger
-
 from llmcore.data_processor.data_loader import DataLoader
 from llmcore.data_processor.download_files import DownloadFiles
 from llmcore.rag.indexer import RAGIndexer

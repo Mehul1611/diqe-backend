@@ -67,11 +67,13 @@ export const api = {
         mode: string = 'fast',
         token: string,
         chatHistory: ChatMessagePayload[] = [],
+        signal?: AbortSignal,
     ) => {
         const res = await fetch(`${API_BASE}/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
             body: JSON.stringify({ model_id: modelId, user_id: '', query, type, language, mode, chat_history: chatHistory }),
+            signal,
         })
         if (!res.ok) throw new Error('Query failed')
         return res

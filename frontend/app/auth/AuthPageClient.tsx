@@ -31,6 +31,28 @@ export default function AuthPageClient() {
 
     const title = useMemo(() => (tab === 'signin' ? 'Sign in' : 'Create account'), [tab])
 
+    const friendlyAuthError = useCallback((raw: string): string => {
+        const m = raw.toLowerCase()
+        if (m.includes('email rate limit') || m.includes('rate limit exceeded')) {
+            return (
+                'Too many sign-up emails have been sent recently and our email '
+                + 'provider has temporarily paused new confirmation messages. '
+                + 'Please wait about an hour and try again, or contact the '
+                + 'project owner to switch to a higher-volume email provider.'
+            )
+        }
+        if (m.includes('for security purposes') && m.includes('seconds')) {
+            return 'Please wait a moment before requesting another confirmation email for this address.'
+        }
+        if (m.includes('user already registered')) {
+            return 'An account with that email already exists. Try signing in instead.'
+        }
+        if (m.includes('invalid login credentials')) {
+            return 'Email or password is incorrect.'
+        }
+        return raw
+    }, [])
+
     const clearCredentials = useCallback(() => {
         setEmail('')
         setPassword('')
@@ -71,7 +93,7 @@ export default function AuthPageClient() {
                 }
                 const signupEmail = email.trim()
                 const { error, session } = await signUp(signupEmail, password)
-                if (error) { setError(error.message); setLoading(false); return }
+                if (error) { setError(friendlyAuthError(error.message)); setLoading(false); return }
                 setPassword('')
                 setConfirm('')
                 setLoading(false)
@@ -86,7 +108,7 @@ export default function AuthPageClient() {
             }
 
             const { error } = await signIn(email, password)
-            if (error) { setError(error.message); setLoading(false); return }
+            if (error) { setError(friendlyAuthError(error.message)); setLoading(false); return }
             clearCredentials()
             setLoading(false)
             router.replace('/dashboard')

@@ -370,6 +370,7 @@ export default function DashboardPage() {
 
     const [cards, setCards] = useState<ModelCard[]>([])
     const [loadingCards, setLoadingCards] = useState(true)
+    const [initialLoadDone, setInitialLoadDone] = useState(false)
     const [showNewModal, setShowNewModal] = useState(false)
     const [deleteTarget, setDeleteTarget] = useState<ModelCard | null>(null)
     const [editTarget, setEditTarget] = useState<ModelCard | null>(null)
@@ -383,16 +384,34 @@ export default function DashboardPage() {
     const token = session?.access_token ?? ''
 
     const fetchCards = useCallback(() => {
-        if (!token) return
+        if (!token) {
+            if (!authLoading) {
+                setLoadingCards(false)
+                setInitialLoadDone(true)
+            }
+            return
+        }
         api.getModels(token)
-            .then(setCards)
+            .then((data) => setCards(data))
             .catch(console.error)
-            .finally(() => setLoadingCards(false))
-    }, [token])
+            .finally(() => {
+                setLoadingCards(false)
+                setInitialLoadDone(true)
+            })
+    }, [token, authLoading])
 
     useEffect(() => {
         fetchCards()
     }, [fetchCards])
+
+    useEffect(() => {
+        if (!loadingCards) return
+        const timer = setTimeout(() => {
+            setLoadingCards(false)
+            setInitialLoadDone(true)
+        }, 6000)
+        return () => clearTimeout(timer)
+    }, [loadingCards])
 
     useEffect(() => {
         const onFocus = () => fetchCards()
@@ -484,7 +503,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Cards grid */}
-                {loadingCards ? (
+                {loadingCards && !initialLoadDone ? (
                     <div className="flex items-center justify-center py-24">
                         <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
                     </div>

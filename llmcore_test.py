@@ -24,7 +24,7 @@ async def setup():
     try:
         task_executor = TaskExecutor(input_data)
         await task_executor.setup()
-        print("GraphRAG Setup Completed.")
+        print("RAG Indexing Completed.")
 
     except Exception as e:
         print(f"Pipeline Failed: {e}")

@@ -19,6 +19,7 @@ import {
     ToggleLeft,
     ToggleRight,
     Trash2,
+    Pencil,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -36,6 +37,7 @@ import { getSupabase } from '@/lib/supabase'
 
 const LANGUAGE_OPTIONS = [
     'English',
+    'Hindi',
     'Spanish',
     'French',
     'German',
@@ -47,6 +49,7 @@ const LANGUAGE_OPTIONS = [
 function languageAccentClass(lang: string) {
     switch (lang) {
         case 'English': return 'text-indigo-400'
+        case 'Hindi':   return 'text-[#FF9933]'
         case 'Spanish': return 'text-amber-400'
         case 'French':  return 'text-pink-400'
         case 'German':  return 'text-yellow-400'
@@ -70,14 +73,24 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
     }, [user, authLoading, router])
 
     const [query, setQuery] = useState('')
-    const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+    type ChatMessage = {
+        role: 'user' | 'assistant'
+        content: string
+        id?: string
+        createdAt?: string
+    }
+    const [messages, setMessages] = useState<ChatMessage[]>([])
     const [isSearching, setIsSearching] = useState(false)
     const [isStreaming, setIsStreaming] = useState(false)
     const [view, setView] = useState<'console' | 'knowledge'>('console')
 
+    const [editingIndex, setEditingIndex] = useState<number | null>(null)
+    const [editDraft, setEditDraft] = useState('')
+    const editTextareaRef = useRef<HTMLTextAreaElement>(null)
+    const abortRef = useRef<AbortController | null>(null)
+
     const [modelCard, setModelCard] = useState<ModelCard | null>(null)
 
-    // Chat history (persisted) + Temp chat (not persisted)
     type ChatSessionRow = { id: string; title: string; last_message_at: string; created_at: string }
     const [tempChat, setTempChat] = useState(false)
     const [sessions, setSessions] = useState<ChatSessionRow[]>([])
@@ -116,7 +129,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
     const [langMenuOpen, setLangMenuOpen] = useState(false)
     const langPickerRef = useRef<HTMLDivElement>(null)
 
-    // ---- mid-chat upload state ----
     const [pendingFiles, setPendingFiles] = useState<File[]>([])
     const [isUploading, setIsUploading] = useState(false)
     const uploadInputRef = useRef<HTMLInputElement>(null)
@@ -142,39 +154,67 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
         }
     }, [langMenuOpen])
 
-    // ---- query handler ----
-    const handleSearch = async () => {
-        if (!query.trim()) return
-        const tempQuery = query
-        const prior = messages
-        setMessages((prev) => [...prev, { role: 'user', content: tempQuery }])
-        setQuery('')
+    const sendMessage = async (text: string, priorOverride?: ChatMessage[]) => {
+        const prior = priorOverride ?? messages
+        const userMarker = `__pending_${Date.now()}_${Math.random().toString(36).slice(2)}__`
+
+        setMessages((prev) => [
+            ...prev,
+            { role: 'user', content: text, id: userMarker },
+        ])
         setIsSearching(true)
 
+        const controller = new AbortController()
+        abortRef.current = controller
+
         try {
-            // Ensure a persisted session exists (unless temp chat).
             let sessionId = activeSessionId
             if (!tempChat && !sessionId) {
-                sessionId = await createNewSession()
+                sessionId = await createNewSession({ clearMessages: false })
             }
 
             if (!tempChat && sessionId && user) {
                 try {
                     const sb = getSupabase()
-                    await sb.from('chat_messages').insert({ session_id: sessionId, user_id: user.id, role: 'user', content: tempQuery })
+                    const { data: insertedUser } = await sb
+                        .from('chat_messages')
+                        .insert({ session_id: sessionId, user_id: user.id, role: 'user', content: text })
+                        .select('id,created_at')
+                        .single()
+                    if (insertedUser) {
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.id === userMarker
+                                    ? { ...m, id: insertedUser.id, createdAt: insertedUser.created_at }
+                                    : m,
+                            ),
+                        )
+                    } else {
+                        setMessages((prev) =>
+                            prev.map((m) => (m.id === userMarker ? { ...m, id: undefined } : m)),
+                        )
+                    }
                     await sb.from('chat_sessions').update({ last_message_at: new Date().toISOString() }).eq('id', sessionId)
 
-                    // Set a better title after the first user message.
-                    const title = tempQuery.trim().slice(0, 48)
+                    const title = text.trim().slice(0, 48)
                     await sb.from('chat_sessions').update({ title }).eq('id', sessionId).eq('title', 'New chat')
                     refreshSessions()
                 } catch (e) {
                     console.warn('[chat] failed to persist user message:', e)
+                    setMessages((prev) =>
+                        prev.map((m) => (m.id === userMarker ? { ...m, id: undefined } : m)),
+                    )
                 }
+            } else {
+                setMessages((prev) =>
+                    prev.map((m) => (m.id === userMarker ? { ...m, id: undefined } : m)),
+                )
             }
 
-            const queryWithContext = buildChatContext(prior) + tempQuery
-            const res = await api.streamQueryDocument(id, queryWithContext, searchType, language, mode, token)
+            const queryWithContext = buildChatContext(prior) + text
+            const res = await api.streamQueryDocument(
+                id, queryWithContext, searchType, language, mode, token, [], controller.signal,
+            )
             const reader = res.body?.getReader()
             const decoder = new TextDecoder('utf-8')
 
@@ -184,38 +224,148 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
 
             let accumulatedText = ''
             if (reader) {
-                while (true) {
-                    const { done, value } = await reader.read()
-                    if (done) break
-                    const chunk = decoder.decode(value, { stream: true })
-                    accumulatedText += chunk
-                    setMessages((prev) => {
-                        const next = [...prev]
-                        next[next.length - 1].content = accumulatedText
-                        return next
-                    })
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read()
+                        if (done) break
+                        if (controller.signal.aborted) break
+                        const chunk = decoder.decode(value, { stream: true })
+                        accumulatedText += chunk
+                        setMessages((prev) => {
+                            const next = [...prev]
+                            const lastIdx = next.length - 1
+                            if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
+                                next[lastIdx] = { ...next[lastIdx], content: accumulatedText }
+                            }
+                            return next
+                        })
+                    }
+                } catch (readErr: any) {
+                    if (readErr?.name !== 'AbortError') throw readErr
                 }
             }
             setIsStreaming(false)
 
+            if (controller.signal.aborted) return
+
             if (!tempChat && sessionId && user) {
                 try {
                     const sb = getSupabase()
-                    await sb.from('chat_messages').insert({ session_id: sessionId, user_id: user.id, role: 'assistant', content: accumulatedText || '' })
+                    const { data: insertedAsst } = await sb
+                        .from('chat_messages')
+                        .insert({ session_id: sessionId, user_id: user.id, role: 'assistant', content: accumulatedText || '' })
+                        .select('id,created_at')
+                        .single()
+                    if (insertedAsst) {
+                        setMessages((prev) => {
+                            const next = [...prev]
+                            const lastIdx = next.length - 1
+                            if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
+                                next[lastIdx] = {
+                                    ...next[lastIdx],
+                                    id: insertedAsst.id,
+                                    createdAt: insertedAsst.created_at,
+                                }
+                            }
+                            return next
+                        })
+                    }
                     await sb.from('chat_sessions').update({ last_message_at: new Date().toISOString() }).eq('id', sessionId)
                     refreshSessions()
                 } catch (e) {
                     console.warn('[chat] failed to persist assistant message:', e)
                 }
             }
-        } catch {
+        } catch (err: any) {
+            if (controller.signal.aborted || err?.name === 'AbortError') {
+                setIsSearching(false)
+                setIsStreaming(false)
+                return
+            }
             setMessages((prev) => [...prev, { role: 'assistant', content: '**Error**\n\nCould not complete the request.' }])
             setIsSearching(false)
             setIsStreaming(false)
+        } finally {
+            if (abortRef.current === controller) abortRef.current = null
         }
     }
 
-    // ---- knowledge loader (sources + rag stats) ----
+    const handleSearch = async () => {
+        if (!query.trim()) return
+        const text = query
+        setQuery('')
+        await sendMessage(text)
+    }
+
+    // ---- edit handlers ----
+    const startEdit = (index: number) => {
+        const m = messages[index]
+        if (!m || m.role !== 'user') return
+        setEditingIndex(index)
+        setEditDraft(m.content)
+        requestAnimationFrame(() => {
+            const ta = editTextareaRef.current
+            if (ta) {
+                ta.focus()
+                const len = ta.value.length
+                ta.setSelectionRange(len, len)
+            }
+        })
+    }
+
+    const cancelEdit = () => {
+        setEditingIndex(null)
+        setEditDraft('')
+    }
+
+    const saveEdit = async () => {
+        if (editingIndex === null) return
+        const newText = editDraft.trim()
+        if (!newText) return
+
+        const idx = editingIndex
+        const editedMsg = messages[idx]
+        if (!editedMsg || editedMsg.role !== 'user') {
+            cancelEdit()
+            return
+        }
+
+        if (abortRef.current) {
+            abortRef.current.abort()
+            abortRef.current = null
+        }
+        setIsSearching(false)
+        setIsStreaming(false)
+
+        const prior = messages.slice(0, idx)
+        setMessages(prior)
+
+        if (!tempChat && activeSessionId && editedMsg.createdAt) {
+            try {
+                const sb = getSupabase()
+                await sb
+                    .from('chat_messages')
+                    .delete()
+                    .eq('session_id', activeSessionId)
+                    .gte('created_at', editedMsg.createdAt)
+            } catch (e) {
+                console.warn('[chat] failed to prune messages on edit:', e)
+            }
+        } else if (!tempChat && activeSessionId && editedMsg.id && !editedMsg.id.startsWith('__pending_')) {
+            try {
+                const sb = getSupabase()
+                await sb.from('chat_messages').delete().eq('id', editedMsg.id)
+            } catch (e) {
+                console.warn('[chat] failed to delete edited message:', e)
+            }
+        }
+
+        setEditingIndex(null)
+        setEditDraft('')
+
+        await sendMessage(newText, prior)
+    }
+
     const loadKnowledge = async () => {
         if (sources.length > 0 && graphData) { setView('knowledge'); return }
         setLoadingData(true)
@@ -234,7 +384,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
         }
     }
 
-    // ---- upload handler ----
     const handleUploadDocs = async () => {
         if (pendingFiles.length === 0 || isUploading) return
         setIsUploading(true)
@@ -269,7 +418,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
         setShowSearchMenu((v) => !v)
     }
 
-    // ---- model card loader ----
     useEffect(() => {
         if (!token) return
         api.getModels(token)
@@ -277,7 +425,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
             .catch(() => setModelCard(null))
     }, [token, id])
 
-    // ---- chat history loaders ----
     const refreshSessions = useCallback(async () => {
         if (!user) return
         setLoadingSessions(true)
@@ -303,13 +450,15 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
             const sb = getSupabase()
             const { data, error } = await sb
                 .from('chat_messages')
-                .select('role,content,created_at')
+                .select('id,role,content,created_at')
                 .eq('session_id', sessionId)
                 .order('created_at', { ascending: true })
             if (error) throw error
-            const next = (data ?? []).map((r: any) => ({
+            const next: ChatMessage[] = (data ?? []).map((r: any) => ({
+                id: r.id as string,
                 role: r.role as 'user' | 'assistant',
                 content: r.content as string,
+                createdAt: r.created_at as string,
             }))
             setMessages(next)
         } catch (e) {
@@ -318,8 +467,9 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
         }
     }, [])
 
-    const createNewSession = useCallback(async () => {
+    const createNewSession = useCallback(async (opts?: { clearMessages?: boolean }) => {
         if (!user) return null
+        const clearMessages = opts?.clearMessages ?? true
         try {
             const sb = getSupabase()
             const { data, error } = await sb
@@ -331,7 +481,7 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
             const row = data as any as ChatSessionRow
             setSessions((prev) => [row, ...prev.filter((s) => s.id !== row.id)])
             setActiveSessionId(row.id)
-            setMessages([])
+            if (clearMessages) setMessages([])
             return row.id
         } catch (e) {
             console.warn('[chat] failed to create session:', e)
@@ -377,7 +527,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
             setActiveSessionId(null)
             return
         }
-        // Auto-pick the latest session if none selected
         if (!activeSessionId && sessions.length > 0) {
             setActiveSessionId(sessions[0].id)
             loadSessionMessages(sessions[0].id)
@@ -389,7 +538,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/25" aria-hidden />
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.08),_transparent_50%)]" aria-hidden />
 
-            {/* Sidebar — desktop only */}
             <aside className="relative z-20 hidden w-64 shrink-0 flex-col border-r border-slate-800/80 bg-slate-900/55 p-4 backdrop-blur-xl md:flex">
                 <Link href="/get-started" className="mb-8 flex items-center space-x-2 px-2 hover:opacity-95">
                     <Database className="h-6 w-6 text-emerald-500" />
@@ -635,30 +783,81 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                                 {messages.map((msg, i) => {
                                     const streamingThis =
                                         msg.role === 'assistant' && i === messages.length - 1 && isStreaming
-                                    return (
-                                        <div
-                                            key={i}
-                                            className={cn(
-                                                'flex w-full max-w-3xl',
-                                                msg.role === 'user' ? 'ml-auto justify-end' : 'justify-start',
-                                            )}
-                                        >
-                                            <Card
-                                                className={cn(
-                                                    'max-w-[80%] p-5 transition-shadow duration-300',
-                                                    msg.role === 'user'
-                                                        ? 'border border-emerald-500/30 bg-emerald-600/20 text-emerald-50 shadow-md'
-                                                        : 'border border-slate-600/50 bg-slate-900/55 text-slate-100 shadow-[0_0_30px_rgba(16,185,129,0.06)] backdrop-blur-md',
-                                                )}
+                                    if (msg.role === 'user') {
+                                        const isEditing = editingIndex === i
+                                        if (isEditing) {
+                                            return (
+                                                <div
+                                                    key={i}
+                                                    className="mx-auto flex w-full max-w-3xl justify-end"
+                                                >
+                                                    <div className="w-full max-w-[80%] rounded-xl border border-emerald-500/40 bg-emerald-600/15 p-4 shadow-md">
+                                                        <textarea
+                                                            ref={editTextareaRef}
+                                                            value={editDraft}
+                                                            onChange={(e) => setEditDraft(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                                                    e.preventDefault()
+                                                                    saveEdit()
+                                                                } else if (e.key === 'Escape') {
+                                                                    e.preventDefault()
+                                                                    cancelEdit()
+                                                                }
+                                                            }}
+                                                            rows={Math.min(10, Math.max(2, editDraft.split('\n').length))}
+                                                            className="w-full resize-none rounded-md border border-emerald-500/30 bg-slate-950/40 p-3 text-emerald-50 placeholder:text-emerald-200/40 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                                                            placeholder="Edit your message…"
+                                                        />
+                                                        <div className="mt-2 flex items-center justify-end gap-2">
+                                                            <button
+                                                                onClick={cancelEdit}
+                                                                className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700/40 hover:text-white"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                            <button
+                                                                onClick={saveEdit}
+                                                                disabled={!editDraft.trim() || editDraft.trim() === msg.content.trim()}
+                                                                className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                                            >
+                                                                Save &amp; Resend
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )
+                                        }
+                                        return (
+                                            <div
+                                                key={i}
+                                                className="group/msg mx-auto flex w-full max-w-3xl items-end justify-end gap-2"
                                             >
-                                                {msg.role === 'user' ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => startEdit(i)}
+                                                    aria-label="Edit message"
+                                                    title="Edit message"
+                                                    className="mb-1 rounded-md border border-slate-700/60 bg-slate-800/60 p-1.5 text-slate-300 opacity-0 shadow-sm transition hover:border-emerald-500/50 hover:bg-slate-800 hover:text-emerald-300 focus:opacity-100 group-hover/msg:opacity-100"
+                                                >
+                                                    <Pencil className="h-3.5 w-3.5" />
+                                                </button>
+                                                <Card
+                                                    className="max-w-[80%] border border-emerald-500/30 bg-emerald-600/20 p-5 text-emerald-50 shadow-md transition-shadow duration-300"
+                                                >
                                                     <p className="whitespace-pre-wrap leading-relaxed tracking-wide">
                                                         {msg.content}
                                                     </p>
-                                                ) : (
-                                                    <FormattedResponse content={msg.content} preprocess={!streamingThis} />
-                                                )}
-                                            </Card>
+                                                </Card>
+                                            </div>
+                                        )
+                                    }
+                                    return (
+                                        <div
+                                            key={i}
+                                            className="mx-auto w-full max-w-3xl px-1 sm:px-2 text-slate-100"
+                                        >
+                                            <FormattedResponse content={msg.content} preprocess={!streamingThis} />
                                         </div>
                                     )
                                 })}

@@ -12,6 +12,7 @@ const GLYPH = {
     searchModes: [{ src: '/icons/loupe-751381.png' }],
     language: [{ src: '/icons/languages-3898082.png' }],
     responseModes: [{ src: '/icons/Gemini_Generated_Image_wqgxviwqgxviwqgx.png', title: 'Response modes' }],
+    tempChat: [{ src: '/icons/deadline_2612924.png', title: 'Temporary chat' }],
     tip: [{ src: '/icons/idea-1208171.png' }],
 }
 
@@ -27,6 +28,7 @@ const SECTION_ORDER: { id: SectionId; glyphScale: 'prominent' | 'default' }[] = 
     { id: 'searchModes', glyphScale: 'default' },
     { id: 'language', glyphScale: 'default' },
     { id: 'responseModes', glyphScale: 'prominent' },
+    { id: 'tempChat', glyphScale: 'default' },
     { id: 'tip', glyphScale: 'default' },
 ]
 
@@ -156,6 +158,8 @@ function sectionTitle(copy: OnboardingCopy, id: SectionId): string {
             return copy.language.title
         case 'responseModes':
             return copy.responseModes.title
+        case 'tempChat':
+            return copy.tempChat.title
         case 'tip':
             return copy.tip.title
     }
@@ -204,6 +208,12 @@ function SectionBody({ id, copy }: { id: SectionId; copy: OnboardingCopy }) {
             )
         case 'responseModes':
             return <ResponseModesBody copy={copy.responseModes} />
+        case 'tempChat':
+            return (
+                <p className="mt-2 border-l-2 border-amber-500/45 pl-3 text-sm leading-relaxed text-slate-300">
+                    <InlineMd text={copy.tempChat.body} />
+                </p>
+            )
         case 'tip':
             return (
                 <p className="mt-2 border-l-2 border-emerald-500/35 pl-3 text-sm leading-relaxed text-slate-300">
