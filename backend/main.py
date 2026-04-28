@@ -1,6 +1,7 @@
 import gc
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List
@@ -33,9 +34,12 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Application startup: preloading models...")
     try:
-        ModelProvider.preload_models()
-        gc.collect()
-        logger.info("Models preloaded successfully")
+        if os.environ.get("PRELOAD_MODELS", "0") == "1":
+            ModelProvider.preload_models()
+            gc.collect()
+            logger.info("Models preloaded successfully")
+        else:
+            logger.info("Model preloading disabled (set PRELOAD_MODELS=1 to enable).")
     except Exception as e:
         logger.error("Failed to preload models at startup: %s", e)
     yield

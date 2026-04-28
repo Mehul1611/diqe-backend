@@ -3,6 +3,7 @@ import gc
 import json
 import logging
 import numpy as np
+import os
 import threading
 from chromadb.config import Settings
 from pathlib import Path
@@ -126,14 +127,15 @@ class HybridRetriever:
             rrf[cid] = rrf.get(cid, 0.0) + 1.0 / (k + rank + 1)
         candidates = [id_to_text[cid] for cid in sorted(rrf, key=rrf.get, reverse=True) if cid in id_to_text]
         top_score = float("-inf")
-        if len(candidates) > 1:
-            pairs = [(query, c) for c in candidates]
-            reranker = ModelProvider.get_reranker_model()
-            rerank_scores = reranker.predict(pairs)
-            sorted_pairs = sorted(zip(rerank_scores, candidates), reverse=True)
-            top_score = float(sorted_pairs[0][0])
-            candidates = [c for _, c in sorted_pairs]
-        elif len(candidates) == 1:
-            reranker = ModelProvider.get_reranker_model()
-            top_score = float(reranker.predict([(query, candidates[0])])[0])
+        if os.environ.get("ENABLE_RERANKER", "0") == "1":
+            if len(candidates) > 1:
+                pairs = [(query, c) for c in candidates]
+                reranker = ModelProvider.get_reranker_model()
+                rerank_scores = reranker.predict(pairs)
+                sorted_pairs = sorted(zip(rerank_scores, candidates), reverse=True)
+                top_score = float(sorted_pairs[0][0])
+                candidates = [c for _, c in sorted_pairs]
+            elif len(candidates) == 1:
+                reranker = ModelProvider.get_reranker_model()
+                top_score = float(reranker.predict([(query, candidates[0])])[0])
         return candidates[: RAGConstants.RERANK_TOP_K], top_score
