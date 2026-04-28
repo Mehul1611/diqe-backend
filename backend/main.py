@@ -1,8 +1,7 @@
-# Author: Mehul Sharma
-# This code is for evaluation purposes only. Unauthorized use is prohibited.
-
+import gc
 import json
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List
 import uvicorn
@@ -16,12 +15,13 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from backend.auth import get_current_user
 from backend.routers.models import router as models_router
 from backend.schemas import ProcessRequest, QueryRequest
 from backend.storage import StorageService
 from llmcore.main import TaskExecutor
+from llmcore.models import ModelProvider
 from llmcore.utils.cleanup import cleanup_old_data
 
 load_dotenv()
@@ -29,11 +29,24 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Application startup: preloading models...")
+    try:
+        ModelProvider.preload_models()
+        gc.collect()
+        logger.info("Models preloaded successfully")
+    except Exception as e:
+        logger.error("Failed to preload models at startup: %s", e)
+    yield
+    logger.info("Application shutdown")
+
+
 class DIQECoreAPI:
     REPO_ROOT = Path(__file__).resolve().parents[1]
 
     def __init__(self):
-        self.app = FastAPI(title="DIQE Data Science Core API")
+        self.app = FastAPI(title="DIQE Data Science Core API", lifespan=lifespan)
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
@@ -159,6 +172,27 @@ class DIQECoreAPI:
                 request.language,
                 user_id,
             )
+
+            if request.search_type == "local":
+                rag_dir = self.REPO_ROOT / "output" / user_id / request.model_id / "rag"
+                marker = rag_dir / "index_complete.json"
+                if not marker.exists():
+                    progress_file = rag_dir / "index_progress.json"
+                    if progress_file.exists():
+                        try:
+                            progress = json.loads(progress_file.read_text())
+                            if progress.get("status") == "failed":
+                                raise HTTPException(
+                                    status_code=503,
+                                    detail="Document indexing failed. Please re-upload and process your documents."
+                                )
+                        except json.JSONDecodeError:
+                            pass
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Document indexing is still in progress. Please wait for it to complete."
+                    )
+
             executor = TaskExecutor(input_data)
             return StreamingResponse(
                 executor.stream_query(
@@ -174,6 +208,8 @@ class DIQECoreAPI:
                     "Connection": "keep-alive",
                 },
             )
+        except HTTPException:
+            raise
         except Exception as exc:
             logger.error("Error executing query: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -243,32 +279,77 @@ class DIQECoreAPI:
         try:
             rag_dir = self.REPO_ROOT / "output" / user_id / model_id / "rag"
             marker = rag_dir / "index_complete.json"
+            progress_file = rag_dir / "index_progress.json"
             corpus_j = rag_dir / "corpus.json"
             corpus_l = rag_dir / "corpus.jsonl"
 
             if marker.exists():
                 info = json.loads(marker.read_text())
-                return {
-                    "status": "completed",
-                    "progress": 100,
-                    "message": f"Indexing complete. {info.get('chunk_count', '?')} chunks indexed.",
-                }
+                return JSONResponse(
+                    content={
+                        "status": "completed",
+                        "progress": 100,
+                        "message": f"Indexing complete. {info.get('chunk_count', '?')} chunks indexed.",
+                    },
+                    headers={"Cache-Control": "public, max-age=60"},
+                )
+
+            if progress_file.exists():
+                try:
+                    progress_info = json.loads(progress_file.read_text())
+                    if progress_info.get("status") == "failed":
+                        return JSONResponse(
+                            content={
+                                "status": "error",
+                                "progress": 0,
+                                "message": f"Indexing failed: {progress_info.get('error', 'Unknown error')}. "
+                                           f"Indexed {progress_info.get('chunks_indexed', 0)} chunks before failure.",
+                            },
+                            headers={"Cache-Control": "no-cache"},
+                        )
+                    chunks = progress_info.get("chunks_indexed", 0)
+                    current_doc = progress_info.get("current_doc", "")
+                    return JSONResponse(
+                        content={
+                            "status": "indexing",
+                            "progress": min(90, 50 + (chunks // 10)),
+                            "message": f"Indexing in progress... {chunks} chunks indexed. Current: {current_doc}",
+                        },
+                        headers={"Cache-Control": "no-cache, max-age=3"},
+                    )
+                except (json.JSONDecodeError, OSError):
+                    pass
 
             if corpus_j.exists() or corpus_l.exists():
-                return {"status": "indexing", "progress": 70, "message": "Building vector index..."}
+                return JSONResponse(
+                    content={"status": "indexing", "progress": 70, "message": "Building vector index..."},
+                    headers={"Cache-Control": "no-cache, max-age=3"},
+                )
 
             extracted_dir = self.REPO_ROOT / "output" / user_id / model_id / "extracted"
             if extracted_dir.exists() and any(extracted_dir.iterdir()):
-                return {"status": "indexing", "progress": 40, "message": "Extracting document text..."}
+                return JSONResponse(
+                    content={"status": "indexing", "progress": 40, "message": "Extracting document text..."},
+                    headers={"Cache-Control": "no-cache, max-age=3"},
+                )
 
             models_dir = self.REPO_ROOT / "models" / user_id / model_id / "input"
             if models_dir.exists() and any(models_dir.iterdir()):
-                return {"status": "construction", "progress": 20, "message": "Documents received, processing..."}
+                return JSONResponse(
+                    content={"status": "construction", "progress": 20, "message": "Documents received, processing..."},
+                    headers={"Cache-Control": "no-cache, max-age=3"},
+                )
 
-            return {"status": "pending", "progress": 0, "message": "Waiting for pipeline to start..."}
+            return JSONResponse(
+                content={"status": "pending", "progress": 0, "message": "Waiting for pipeline to start..."},
+                headers={"Cache-Control": "no-cache, max-age=5"},
+            )
         except Exception as exc:
             logger.error("Error checking status for model %s: %s", model_id, exc)
-            return {"status": "error", "message": str(exc)}
+            return JSONResponse(
+                content={"status": "error", "progress": 0, "message": str(exc)},
+                headers={"Cache-Control": "no-cache"},
+            )
 
     async def upload_files(
         self,

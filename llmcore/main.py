@@ -1,11 +1,13 @@
-# Author: Mehul Sharma
-# This code is for evaluation purposes only. Unauthorized use is prohibited.
-
+import gc
+import json
 import logging
+from pathlib import Path
+from llmcore.constants import ModelConstant
 from llmcore.data_processor.data_loader import DataLoader
 from llmcore.data_processor.download_files import DownloadFiles
 from llmcore.rag.indexer import RAGIndexer
 from llmcore.rag.pipeline import RAGPipeline
+from llmcore.rag.retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -15,21 +17,42 @@ class TaskExecutor:
         self.input_data = input_data
 
     async def setup(self):
-        logger.info("Setup started for model_id=%s", self.input_data.get("model_id"))
+        model_id = self.input_data.get("model_id")
+        user_id = self.input_data.get("user_id", "default")
+        logger.info("Setup started for model_id=%s", model_id)
 
-        downloader = DownloadFiles(self.input_data)
-        await downloader.download_all_files()
+        rag_dir = Path(ModelConstant.PathConstant.RAG_OUTPUT_PATH.format(
+            user_id=user_id, model_id=model_id
+        ))
+        progress_path = rag_dir / "index_progress.json"
 
-        loader = DataLoader(self.input_data)
-        doc_generator = loader.extract_data()
+        try:
+            HybridRetriever.clear_cache(model_id=model_id, user_id=user_id)
 
-        indexer = RAGIndexer(
-            model_id=self.input_data["model_id"],
-            user_id=self.input_data.get("user_id", "default"),
-        )
-        await indexer.index_documents(doc_generator)
+            downloader = DownloadFiles(self.input_data)
+            await downloader.download_all_files()
 
-        logger.info("Setup finished successfully for model_id=%s", self.input_data.get("model_id"))
+            loader = DataLoader(self.input_data)
+            doc_generator = loader.extract_data()
+
+            indexer = RAGIndexer(
+                model_id=model_id,
+                user_id=user_id,
+            )
+            await indexer.index_documents(doc_generator)
+
+            gc.collect()
+            logger.info("Setup finished successfully for model_id=%s", model_id)
+
+        except Exception as e:
+            logger.error("Setup failed for model_id=%s: %s", model_id, e)
+            rag_dir.mkdir(parents=True, exist_ok=True)
+            progress_path.write_text(json.dumps({
+                "status": "failed",
+                "error": str(e),
+                "chunks_indexed": 0,
+            }))
+            raise
 
     async def query(
         self,
