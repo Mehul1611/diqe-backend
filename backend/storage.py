@@ -1,6 +1,7 @@
 import logging
 import os
 from functools import lru_cache
+from typing import BinaryIO, Union
 from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,13 @@ class StorageService:
     def _prefix(self, model_id: str, subfolder: str) -> str:
         return f"users/{self.user_id}/{model_id}/{subfolder}"
 
-    def upload_file(self, model_id: str, subfolder: str, filename: str, data: bytes) -> None:
+    def upload_file(
+        self,
+        model_id: str,
+        subfolder: str,
+        filename: str,
+        data: Union[bytes, BinaryIO],
+    ) -> None:
         path = self._object_path(model_id, subfolder, filename)
         try:
             self._sb.storage.from_(BUCKET).upload(

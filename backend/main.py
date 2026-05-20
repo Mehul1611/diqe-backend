@@ -29,6 +29,10 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+UPLOAD_CHUNK_SIZE = int(os.environ.get("UPLOAD_CHUNK_SIZE_BYTES", str(1024 * 1024)))  # 1 MiB
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "15"))
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -369,13 +373,27 @@ class DIQECoreAPI:
             saved_files: list[dict] = []
 
             for file in files:
-                content = await file.read()
-
                 local_path = input_dir / file.filename
-                local_path.write_bytes(content)
+                bytes_written = 0
+                try:
+                    with open(local_path, "wb") as out:
+                        while True:
+                            chunk = await file.read(UPLOAD_CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            bytes_written += len(chunk)
+                            if bytes_written > MAX_UPLOAD_BYTES:
+                                raise HTTPException(
+                                    status_code=413,
+                                    detail=f"File '{file.filename}' exceeds upload limit ({MAX_UPLOAD_MB} MB).",
+                                )
+                            out.write(chunk)
+                finally:
+                    await file.close()
 
                 try:
-                    storage.upload_file(model_id, "input", file.filename, content)
+                    with open(local_path, "rb") as f:
+                        storage.upload_file(model_id, "input", file.filename, f)
                 except Exception as storage_exc:
                     logger.warning(
                         "Storage upload failed for %s (local copy kept): %s",
