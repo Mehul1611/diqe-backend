@@ -1,10 +1,11 @@
+import asyncio
 import gc
 import json
 import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List
+from typing import List, Set
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import (
@@ -23,11 +24,15 @@ from backend.schemas import ProcessRequest, QueryRequest
 from backend.storage import StorageService
 from llmcore.main import TaskExecutor
 from llmcore.models import ModelProvider
+from llmcore.rag.retriever import HybridRetriever
 from llmcore.utils.cleanup import cleanup_old_data
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+_processing_models: Set[str] = set()
+_processing_lock = asyncio.Lock()
 
 UPLOAD_CHUNK_SIZE = int(os.environ.get("UPLOAD_CHUNK_SIZE_BYTES", str(1024 * 1024)))  # 1 MiB
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "15"))
@@ -82,6 +87,48 @@ class DIQECoreAPI:
             if tail.isdigit():
                 return head
         return chunk_id
+
+    def _mark_indexing_started(self, user_id: str, model_id: str) -> None:
+        rag_dir = self._rag_dir(user_id, model_id)
+        rag_dir.mkdir(parents=True, exist_ok=True)
+        marker = rag_dir / "index_complete.json"
+        if marker.exists():
+            marker.unlink()
+        progress_path = rag_dir / "index_progress.json"
+        progress_path.write_text(
+            json.dumps({
+                "status": "indexing",
+                "chunks_indexed": 0,
+                "current_doc": "",
+            }),
+            encoding="utf-8",
+        )
+        HybridRetriever.clear_cache(model_id=model_id, user_id=user_id)
+
+    @staticmethod
+    def _indexing_progress_error(rag_dir: Path) -> str | None:
+        progress_file = rag_dir / "index_progress.json"
+        if not progress_file.exists():
+            return None
+        try:
+            pinfo = json.loads(progress_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        status = pinfo.get("status")
+        if status == "indexing":
+            current = pinfo.get("current_doc") or ""
+            chunks = pinfo.get("chunks_indexed", 0)
+            msg = f"Document indexing is in progress ({chunks} chunks so far)."
+            if current:
+                msg += f" Current: {current}"
+            return msg
+        if status == "failed":
+            err = pinfo.get("error", "Unknown error")
+            return (
+                f"Document indexing failed: {err}. "
+                "Please re-upload and process your documents."
+            )
+        return None
 
     def _rag_index_stats(self, user_id: str, model_id: str) -> dict:
         input_dir = self.REPO_ROOT / "models" / user_id / model_id / "input"
@@ -152,17 +199,40 @@ class DIQECoreAPI:
         user_id: str = Depends(get_current_user),
     ):
         try:
+            process_key = f"{user_id}/{request.model_id}"
+            async with _processing_lock:
+                if process_key in _processing_models:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Processing is already in progress for this model. Please wait.",
+                    )
+                _processing_models.add(process_key)
+
             input_data = request.model_dump()
             input_data["user_id"] = user_id
             logger.info(
-                "Process request: model_id=%s user_id=%s",
+                "Process request: model_id=%s user_id=%s files=%d",
                 input_data["model_id"],
                 user_id,
+                len(input_data.get("files_data") or []),
             )
-            executor = TaskExecutor(input_data)
-            background_tasks.add_task(executor.setup)
+            self._mark_indexing_started(user_id, request.model_id)
+
+            async def run_setup() -> None:
+                try:
+                    executor = TaskExecutor(input_data)
+                    await executor.setup()
+                finally:
+                    async with _processing_lock:
+                        _processing_models.discard(process_key)
+
+            background_tasks.add_task(run_setup)
             return {"status": "success", "message": "Pipeline processing started in background."}
+        except HTTPException:
+            raise
         except Exception as exc:
+            async with _processing_lock:
+                _processing_models.discard(f"{user_id}/{request.model_id}")
             logger.error("Error initiating pipeline: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -182,7 +252,11 @@ class DIQECoreAPI:
             )
 
             if request.search_type == "local":
-                rag_dir = self.REPO_ROOT / "output" / user_id / request.model_id / "rag"
+                rag_dir = self._rag_dir(user_id, request.model_id)
+                progress_msg = self._indexing_progress_error(rag_dir)
+                if progress_msg:
+                    raise HTTPException(status_code=503, detail=progress_msg)
+
                 marker = rag_dir / "index_complete.json"
                 if not marker.exists():
                     progress_file = rag_dir / "index_progress.json"

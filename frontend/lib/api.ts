@@ -37,7 +37,16 @@ export const api = {
             headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
             body: JSON.stringify({ model_id: modelId, user_id: '', files_data: files }),
         })
-        if (!res.ok) throw new Error('Processing failed')
+        if (!res.ok) {
+            let detail = 'Processing failed'
+            try {
+                const body = await res.json()
+                if (typeof body?.detail === 'string') detail = body.detail
+            } catch {
+                /* ignore */
+            }
+            throw new Error(detail)
+        }
         return res.json()
     },
 
@@ -74,6 +83,7 @@ export const api = {
             headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
             body: JSON.stringify({ model_id: modelId, user_id: '', query, type, language, mode, chat_history: chatHistory }),
             signal,
+            cache: 'no-store',
         })
         if (!res.ok) throw new Error('Query failed')
         return res

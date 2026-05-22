@@ -8,6 +8,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pathlib import Path
 from llmcore.constants import ModelConstant, RAGConstants
 from llmcore.models import ModelProvider
+from llmcore.rag.retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -44,22 +45,40 @@ class RAGIndexer:
     def collection(self):
         return self._get_collection()
 
+    def _restore_marker_if_indexed(self, marker: Path) -> None:
+        try:
+            count = self.collection.count()
+        except Exception:
+            count = 0
+        if count > 0:
+            marker.write_text(
+                json.dumps({"status": "complete", "chunk_count": count}),
+                encoding="utf-8",
+            )
+            logger.info("Restored index marker after failure (%d chunks in store).", count)
+
     async def index_documents(self, doc_iterator) -> int:
         embed_model = ModelProvider.get_embedding_model()
         total_indexed = 0
+        docs_indexed = 0
         corpus_path = Path(self.persist_dir) / "corpus.jsonl"
         marker = Path(self.persist_dir) / "index_complete.json"
         progress_path = Path(self.persist_dir) / "index_progress.json"
-
-        if marker.exists():
-            os.remove(marker)
 
         try:
             async for doc in doc_iterator:
                 doc_id = doc["doc_id"]
                 title = doc.get("title", "Unknown")
+                text = (doc.get("text") or "").strip()
+                if not text:
+                    logger.warning("Skipping empty document: %s (%s)", title, doc_id)
+                    continue
+
                 logger.info("Indexing document: %s (%s)", title, doc_id)
-                raw_chunks = self.splitter.split_text(doc["text"])
+                raw_chunks = self.splitter.split_text(text)
+                if not raw_chunks:
+                    logger.warning("No chunks produced for: %s (%s)", title, doc_id)
+                    continue
 
                 for batch_start in range(0, len(raw_chunks), RAGConstants.INDEX_BATCH_SIZE):
                     batch_end = min(batch_start + RAGConstants.INDEX_BATCH_SIZE, len(raw_chunks))
@@ -85,10 +104,32 @@ class RAGIndexer:
 
                     gc.collect()
 
-            marker.write_text(json.dumps({"status": "complete", "chunk_count": total_indexed}))
+                docs_indexed += 1
+
+            if docs_indexed == 0:
+                raise ValueError(
+                    "No text could be extracted from the uploaded file(s). "
+                    "Try a different PDF/DOCX or a text-based document."
+                )
+
+            try:
+                chunk_count = self.collection.count()
+            except Exception:
+                chunk_count = total_indexed
+
+            marker.write_text(
+                json.dumps({"status": "complete", "chunk_count": chunk_count}),
+                encoding="utf-8",
+            )
             if progress_path.exists():
                 progress_path.unlink()
-            logger.info("RAG indexing complete: %d total chunks.", total_indexed)
+            HybridRetriever.clear_cache(model_id=self.model_id, user_id=self.user_id)
+            logger.info(
+                "RAG indexing complete: %d new chunks, %d docs, %d total in store.",
+                total_indexed,
+                docs_indexed,
+                chunk_count,
+            )
             return total_indexed
 
         except Exception as e:
@@ -98,6 +139,8 @@ class RAGIndexer:
                 "chunks_indexed": total_indexed,
                 "error": str(e),
             }))
+            self._restore_marker_if_indexed(marker)
+            HybridRetriever.clear_cache(model_id=self.model_id, user_id=self.user_id)
             raise
 
     def _save_batch(self, ids, chunks, embeddings, metadatas, corpus_path):

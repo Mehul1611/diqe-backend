@@ -245,9 +245,14 @@ const markdownComponents: Components = {
 type FormattedResponseProps = {
   content: string
   preprocess?: boolean
+  streaming?: boolean
 }
 
-export function FormattedResponse({ content, preprocess = true }: FormattedResponseProps) {
+export function FormattedResponse({
+  content,
+  preprocess = true,
+  streaming = false,
+}: FormattedResponseProps) {
   const latexStripped = simplifyLatexLikeMath(content)
   const raw = preprocess ? maybeBoostPlainText(latexStripped) : latexStripped
   const [copiedAll, setCopiedAll] = useState(false)
@@ -264,6 +269,14 @@ export function FormattedResponse({ content, preprocess = true }: FormattedRespo
 
   if (!raw.trim()) {
     return <span className="text-slate-500 italic">…</span>
+  }
+
+  if (streaming) {
+    return (
+      <div className="max-w-none whitespace-pre-wrap text-[15px] leading-relaxed tracking-wide text-slate-200">
+        {content}
+      </div>
+    )
   }
 
   return (

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, use, useRef, useEffect, useMemo, useCallback } from 'react'
+import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -88,6 +89,7 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
     const [editDraft, setEditDraft] = useState('')
     const editTextareaRef = useRef<HTMLTextAreaElement>(null)
     const abortRef = useRef<AbortController | null>(null)
+    const chatScrollRef = useRef<HTMLDivElement>(null)
 
     const [modelCard, setModelCard] = useState<ModelCard | null>(null)
 
@@ -154,6 +156,13 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
         }
     }, [langMenuOpen])
 
+    useEffect(() => {
+        if (!isStreaming && !isSearching) return
+        const el = chatScrollRef.current
+        if (!el) return
+        el.scrollTop = el.scrollHeight
+    }, [messages, isStreaming, isSearching])
+
     const sendMessage = async (text: string, priorOverride?: ChatMessage[]) => {
         const prior = priorOverride ?? messages
         const userMarker = `__pending_${Date.now()}_${Math.random().toString(36).slice(2)}__`
@@ -212,15 +221,16 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
             }
 
             const queryWithContext = buildChatContext(prior) + text
+
+            setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
+            setIsSearching(false)
+            setIsStreaming(true)
+
             const res = await api.streamQueryDocument(
                 id, queryWithContext, searchType, language, mode, token, [], controller.signal,
             )
             const reader = res.body?.getReader()
             const decoder = new TextDecoder('utf-8')
-
-            setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
-            setIsSearching(false)
-            setIsStreaming(true)
 
             let accumulatedText = ''
             if (reader) {
@@ -230,14 +240,17 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                         if (done) break
                         if (controller.signal.aborted) break
                         const chunk = decoder.decode(value, { stream: true })
+                        if (!chunk) continue
                         accumulatedText += chunk
-                        setMessages((prev) => {
-                            const next = [...prev]
-                            const lastIdx = next.length - 1
-                            if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
-                                next[lastIdx] = { ...next[lastIdx], content: accumulatedText }
-                            }
-                            return next
+                        flushSync(() => {
+                            setMessages((prev) => {
+                                const next = [...prev]
+                                const lastIdx = next.length - 1
+                                if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
+                                    next[lastIdx] = { ...next[lastIdx], content: accumulatedText }
+                                }
+                                return next
+                            })
                         })
                     }
                 } catch (readErr: any) {
@@ -282,7 +295,18 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                 setIsStreaming(false)
                 return
             }
-            setMessages((prev) => [...prev, { role: 'assistant', content: '**Error**\n\nCould not complete the request.' }])
+            setMessages((prev) => {
+                const next = [...prev]
+                const lastIdx = next.length - 1
+                if (lastIdx >= 0 && next[lastIdx].role === 'assistant') {
+                    next[lastIdx] = {
+                        ...next[lastIdx],
+                        content: '**Error**\n\nCould not complete the request.',
+                    }
+                    return next
+                }
+                return [...prev, { role: 'assistant', content: '**Error**\n\nCould not complete the request.' }]
+            })
             setIsSearching(false)
             setIsStreaming(false)
         } finally {
@@ -297,7 +321,6 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
         await sendMessage(text)
     }
 
-    // ---- edit handlers ----
     const startEdit = (index: number) => {
         const m = messages[index]
         if (!m || m.role !== 'user') return
@@ -366,16 +389,23 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
         await sendMessage(newText, prior)
     }
 
-    const loadKnowledge = async () => {
-        if (sources.length > 0 && graphData) { setView('knowledge'); return }
+    const refreshKnowledgeData = useCallback(async () => {
+        const [sRes, gRes] = await Promise.all([
+            api.getSources(id, token),
+            api.getGraph(id, token),
+        ])
+        setSources(sRes.data)
+        setGraphData(gRes.data)
+    }, [id, token])
+
+    const loadKnowledge = async (force = false) => {
+        if (!force && sources.length > 0 && graphData) {
+            setView('knowledge')
+            return
+        }
         setLoadingData(true)
         try {
-            const [sRes, gRes] = await Promise.all([
-                api.getSources(id, token),
-                api.getGraph(id, token),
-            ])
-            setSources(sRes.data)
-            setGraphData(gRes.data)
+            await refreshKnowledgeData()
             setView('knowledge')
         } catch {
             console.error('Failed to load knowledge')
@@ -384,8 +414,27 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
         }
     }
 
+    const waitForIndexing = async (maxAttempts = 120, intervalMs = 3000): Promise<{
+        ok: boolean
+        message: string
+    }> => {
+        for (let i = 0; i < maxAttempts; i++) {
+            const st = await api.getStatus(id, token)
+            if (st.status === 'completed') {
+                return { ok: true, message: st.message ?? 'Indexing complete.' }
+            }
+            if (st.status === 'error') {
+                return { ok: false, message: st.message ?? 'Indexing failed.' }
+            }
+            await new Promise((r) => setTimeout(r, intervalMs))
+        }
+        return { ok: false, message: 'Indexing timed out. Check back in a few minutes or try again.' }
+    }
+
     const handleUploadDocs = async () => {
         if (pendingFiles.length === 0 || isUploading) return
+        const fileCount = pendingFiles.length
+        const names = pendingFiles.map((f) => f.name).join(', ')
         setIsUploading(true)
 
         try {
@@ -403,6 +452,41 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
             }))
             await api.processDocument(id, fileDataList, token)
             setPendingFiles([])
+
+            setMessages((prev) => [
+                ...prev,
+                {
+                    role: 'assistant',
+                    content: `**Indexing ${fileCount} file(s)**\n\n${names}\n\nBuilding the knowledge index…`,
+                },
+            ])
+
+            const result = await waitForIndexing()
+            setSources([])
+            setGraphData(null)
+
+            if (result.ok) {
+                await refreshKnowledgeData()
+                try {
+                    const all = await api.getModels(token)
+                    const card = all.find((m) => m.id === id)
+                    if (card) setModelCard(card)
+                } catch {
+                    /* non-fatal */
+                }
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        role: 'assistant',
+                        content: `**Documents ready**\n\n${result.message}\n\nOpen **Knowledge** to review indexed chunks, then ask questions in **local** search mode.`,
+                    },
+                ])
+            } else {
+                setMessages((prev) => [
+                    ...prev,
+                    { role: 'assistant', content: `**Indexing failed**\n\n${result.message}` },
+                ])
+            }
         } catch (e: any) {
             setMessages((prev) => [
                 ...prev,
@@ -658,7 +742,7 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                                 ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15'
                                 : 'hover:bg-slate-800/50',
                         )}
-                        onClick={loadKnowledge}
+                        onClick={() => loadKnowledge(true)}
                     >
                         <Zap className="mr-2 h-4 w-4" /> Knowledge
                     </Button>
@@ -700,7 +784,7 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                         <LayoutDashboard className="h-3.5 w-3.5" /> Console
                     </button>
                     <button
-                        onClick={loadKnowledge}
+                        onClick={() => loadKnowledge(true)}
                         className={cn(
                             'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition',
                             view === 'knowledge' ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-500 hover:text-slate-300',
@@ -767,7 +851,10 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                     {view === 'console' && (
                         <div className="flex h-full flex-col">
                             {/* Messages */}
-                            <div className="scrollbar-thin scrollbar-thumb-slate-800 flex-1 space-y-6 overflow-y-auto p-3 sm:p-6">
+                            <div
+                                ref={chatScrollRef}
+                                className="scrollbar-thin scrollbar-thumb-slate-800 flex-1 space-y-6 overflow-y-auto p-3 sm:p-6"
+                            >
                                 {tempChat && (
                                     <div className="sticky top-0 z-10 -mx-3 sm:-mx-6 px-3 sm:px-6">
                                         <div className="mb-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 backdrop-blur">
@@ -857,7 +944,11 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                                             key={i}
                                             className="mx-auto w-full max-w-3xl px-1 sm:px-2 text-slate-100"
                                         >
-                                            <FormattedResponse content={msg.content} preprocess={!streamingThis} />
+                                            <FormattedResponse
+                                                content={msg.content}
+                                                preprocess={!streamingThis}
+                                                streaming={streamingThis}
+                                            />
                                         </div>
                                     )
                                 })}
@@ -889,7 +980,7 @@ export default function ConsolePage({ params }: { params: Promise<{ id: string }
                                                     {pendingFiles.length} file(s) ready — {pendingFiles.map((f) => f.name).join(', ')}
                                                 </span>
                                                 <button
-                                                    onClick={() => { api.uploadFiles(id, pendingFiles, token); handleUploadDocs() }}
+                                                    onClick={() => handleUploadDocs()}
                                                     disabled={isUploading}
                                                 className={cn('shrink-0 rounded-lg px-3 py-1 text-xs font-bold text-white transition disabled:opacity-50', accentBtn)}
                                                 >

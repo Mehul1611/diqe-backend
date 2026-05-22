@@ -191,6 +191,25 @@ class RAGPipeline:
         cleaned = [c.strip() for c in chunks if c and c.strip()]
         return "\n\n".join(f"[{i + 1}] {c}" for i, c in enumerate(cleaned))
 
+    @staticmethod
+    def _token_text(token) -> str:
+        content = token.content
+        if not content:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict):
+                    text = block.get("text")
+                    if text:
+                        parts.append(str(text))
+            return "".join(parts)
+        return str(content)
+
     def _should_skip_local_excerpts(self, chunks: list[str], top_score: float) -> bool:
         if not chunks:
             return True
@@ -209,8 +228,9 @@ class RAGPipeline:
                 HumanMessage(content=query.strip()),
             ]
             async for token in llm.astream(messages):
-                if token.content:
-                    yield token.content
+                text = self._token_text(token)
+                if text:
+                    yield text
             return
 
         if search_type == "global":
@@ -249,12 +269,21 @@ class RAGPipeline:
                     HumanMessage(content=query),
                 ]
             async for token in web_llm.astream(messages):
-                if token.content:
-                    yield token.content
+                text = self._token_text(token)
+                if text:
+                    yield text
             return
 
         retriever = HybridRetriever.get_instance(self.model_id, self.user_id)
-        chunks, top_score = retriever.retrieve_with_scores(query)
+        retrieve_task = asyncio.create_task(
+            asyncio.to_thread(retriever.retrieve_with_scores, query)
+        )
+        while not retrieve_task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(retrieve_task), timeout=2.0)
+            except asyncio.TimeoutError:
+                yield " "
+        chunks, top_score = retrieve_task.result()
 
         block = self._build_excerpt_block(chunks)
         messages = [
@@ -263,8 +292,9 @@ class RAGPipeline:
         ]
 
         async for token in self.llm.astream(messages):
-            if token.content:
-                yield token.content
+            text = self._token_text(token)
+            if text:
+                yield text
 
     async def execute(self, query: str, search_type: str = "local") -> str:
         result = ""
